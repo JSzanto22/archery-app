@@ -1,0 +1,31 @@
+# Secrets / local config
+.env
+.env.*
+!.env.example
+
+# ML artifacts — never commit datasets or weights
+ml/data/
+ml/datasets/
+ml/runs/
+ml/checkpoints/
+*.pt
+*.pth
+*.onnx
+*.tflite
+*.mlmodel
+*.h5
+
+# Dependencies / build output
+node_modules/
+build/
+dist/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
