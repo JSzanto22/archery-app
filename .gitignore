@@ -24,6 +24,24 @@ __pycache__/
 .venv/
 venv/
 
+# React Native / native builds
+.expo/
+mobile/ios/Pods/
+mobile/ios/build/
+mobile/android/.gradle/
+mobile/android/app/build/
+mobile/android/local.properties
+*.keystore
+!debug.keystore
+
+# Serverless / infra local state
+.serverless/
+.aws-sam/
+cdk.out/
+.terraform/
+*.tfstate
+*.tfstate.*
+
 # Editor / OS
 .DS_Store
 Thumbs.db
