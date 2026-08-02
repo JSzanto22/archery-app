@@ -1,4 +1,4 @@
-import { Model, Q } from '@nozbe/watermelondb';
+﻿import { Model, Q } from '@nozbe/watermelondb';
 import { children, date, field, lazy } from '@nozbe/watermelondb/decorators';
 
 import { Zone } from '../../scoring/scoring';
@@ -12,14 +12,14 @@ export default class Target extends Model {
     rounds: { type: 'has_many' as const, foreignKey: 'target_id' },
   };
 
-  @field('name') name!: string;
-  @field('type') type!: 'preset' | 'custom';
-  @field('base_shape') baseShape!: string | null;
-  @field('aspect_ratio') aspectRatio!: number | null;
-  @date('created_at') createdAt!: Date;
-  @date('updated_at') updatedAt!: Date;
+  @field('name') name: string;
+  @field('type') type: 'preset' | 'custom';
+  @field('base_shape') baseShape: string | null;
+  @field('aspect_ratio') aspectRatio: number | null;
+  @date('created_at') createdAt: Date;
+  @date('updated_at') updatedAt: Date;
 
-  @children('target_zones') zones!: TargetZone[];
+  @children('target_zones') zones: TargetZone[];
 
   @lazy orderedZones = this.collections
     .get<TargetZone>('target_zones')

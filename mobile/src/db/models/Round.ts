@@ -1,4 +1,4 @@
-import { Model, Q } from '@nozbe/watermelondb';
+﻿import { Model, Q } from '@nozbe/watermelondb';
 import { children, date, field, lazy, relation } from '@nozbe/watermelondb/decorators';
 
 import Arrow from './Arrow';
@@ -14,17 +14,17 @@ export default class Round extends Model {
     targets: { type: 'belongs_to' as const, key: 'target_id' },
   };
 
-  @field('session_id') sessionId!: string;
-  @field('target_id') targetId!: string;
-  @field('round_order') roundOrder!: number;
-  @field('photo_key') photoKey!: string | null;
-  @field('local_photo_uri') localPhotoUri!: string | null;
-  @date('created_at') createdAt!: Date;
-  @date('updated_at') updatedAt!: Date;
+  @field('session_id') sessionId: string;
+  @field('target_id') targetId: string;
+  @field('round_order') roundOrder: number;
+  @field('photo_key') photoKey: string | null;
+  @field('local_photo_uri') localPhotoUri: string | null;
+  @date('created_at') createdAt: Date;
+  @date('updated_at') updatedAt: Date;
 
-  @relation('sessions', 'session_id') session!: Session;
-  @relation('targets', 'target_id') target!: Target;
-  @children('arrows') arrows!: Arrow[];
+  @relation('sessions', 'session_id') session: Session;
+  @relation('targets', 'target_id') target: Target;
+  @children('arrows') arrows: Arrow[];
 
   @lazy orderedArrows = this.collections
     .get<Arrow>('arrows')

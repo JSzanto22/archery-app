@@ -1,4 +1,4 @@
-import { Model, Q } from '@nozbe/watermelondb';
+﻿import { Model, Q } from '@nozbe/watermelondb';
 import { children, date, field, lazy, relation } from '@nozbe/watermelondb/decorators';
 
 import GearProfile from './GearProfile';
@@ -12,17 +12,17 @@ export default class Session extends Model {
     gear_profiles: { type: 'belongs_to' as const, key: 'gear_profile_id' },
   };
 
-  @date('shot_at') shotAt!: Date;
-  @field('distance_m') distanceM!: number | null;
-  @field('gear_profile_id') gearProfileId!: string | null;
-  @field('equipment_tag') equipmentTag!: string | null;
-  @field('location') location!: string | null;
-  @field('notes') notes!: string | null;
-  @date('created_at') createdAt!: Date;
-  @date('updated_at') updatedAt!: Date;
+  @date('shot_at') shotAt: Date;
+  @field('distance_m') distanceM: number | null;
+  @field('gear_profile_id') gearProfileId: string | null;
+  @field('equipment_tag') equipmentTag: string | null;
+  @field('location') location: string | null;
+  @field('notes') notes: string | null;
+  @date('created_at') createdAt: Date;
+  @date('updated_at') updatedAt: Date;
 
-  @relation('gear_profiles', 'gear_profile_id') gearProfile!: GearProfile | null;
-  @children('rounds') rounds!: Round[];
+  @relation('gear_profiles', 'gear_profile_id') gearProfile: GearProfile | null;
+  @children('rounds') rounds: Round[];
 
   @lazy orderedRounds = this.collections
     .get<Round>('rounds')

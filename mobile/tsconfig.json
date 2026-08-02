@@ -2,6 +2,14 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    // WatermelonDB model fields are supplied by @field/@date/@relation
+    // decorators at runtime, so the compiler never sees an assignment. The
+    // usual workaround — a `!` definite-assignment modifier — is rejected by
+    // Babel on a decorated field ("Definitely assigned fields cannot be
+    // initialized here"), which breaks the bundle on every platform. Turning
+    // the check off is the remaining option; the decorators are what guarantee
+    // initialisation.
+    "strictPropertyInitialization": false,
     "experimentalDecorators": true,
     "noUncheckedIndexedAccess": false,
     "types": ["jest", "node"],

@@ -6,11 +6,10 @@
  */
 
 import { Database } from '@nozbe/watermelondb';
-import SQLiteAdapter from '@nozbe/watermelondb/adapters/sqlite';
 import { setGenerator } from '@nozbe/watermelondb/utils/common/randomId';
 import * as Crypto from 'expo-crypto';
 
-import schema from './schema';
+import { createAdapter } from './adapter';
 import Arrow from './models/Arrow';
 import GearProfile from './models/GearProfile';
 import Round from './models/Round';
@@ -29,22 +28,9 @@ import TargetZone from './models/TargetZone';
  */
 setGenerator(() => Crypto.randomUUID());
 
-const adapter = new SQLiteAdapter({
-  schema,
-  // JSI is the fast synchronous path; without it every query crosses the RN
-  // bridge. Requires a dev client or a release build — it is unavailable in
-  // Expo Go, which is why this project uses a custom dev client.
-  jsi: true,
-  onSetUpError: (error) => {
-    // A failure here means the database could not be opened at all. There is no
-    // useful recovery in-process; surface it rather than running against a
-    // half-initialised store.
-    console.error('[db] failed to open local database', error);
-  },
-});
-
+// SQLite on device, LokiJS in the browser preview. Metro resolves which.
 export const database = new Database({
-  adapter,
+  adapter: createAdapter(),
   modelClasses: [GearProfile, Target, TargetZone, Session, Round, Arrow],
 });
 

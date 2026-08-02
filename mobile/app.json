@@ -18,6 +18,10 @@
       "package": "app.archerytracker.mobile",
       "permissions": ["android.permission.CAMERA"]
     },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
     "plugins": [
       [
         "expo-build-properties",
