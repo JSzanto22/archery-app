@@ -1,0 +1,50 @@
+# Local development stack.
+#
+# Postgres only for now — the API will be added as a service once it exists.
+# The database is seeded with demo data on first start; see backend/db/README.md.
+
+name: archery-app
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: archery-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-archery}
+      POSTGRES_USER: ${POSTGRES_USER:-archery}
+      # Dev-only credential. Real environments use RDS with secrets from
+      # Secrets Manager; nothing here is ever a production password.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-archery_dev}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - archery_pgdata:/var/lib/postgresql/data
+      # Postgres runs these once, in filename order, on an empty data directory.
+      # It ignores subdirectories, so each file is mounted explicitly.
+      - ./backend/db/migrations/0001_init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+      - ./backend/db/seeds/0001_preset_targets.sql:/docker-entrypoint-initdb.d/02_preset_targets.sql:ro
+      - ./backend/db/seeds/0002_demo_data.sql:/docker-entrypoint-initdb.d/03_demo_data.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-archery} -d ${POSTGRES_DB:-archery}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # Optional web SQL client: docker compose --profile tools up -d
+  adminer:
+    image: adminer:5
+    container_name: archery-adminer
+    restart: unless-stopped
+    profiles: ["tools"]
+    ports:
+      - "${ADMINER_PORT:-8080}:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  archery_pgdata:
