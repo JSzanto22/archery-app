@@ -146,7 +146,7 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
       {rounds.map((view) => (
         <View key={view.round.id}>
           <SectionHeader
-            title={`Board ${view.round.roundOrder} · ${view.score}`}
+            title={`End ${view.round.roundOrder} · ${view.score}`}
             trailing={
               <Button
                 label="Edit marks"
@@ -181,10 +181,8 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
       ))}
 
       {rounds.length === 0 ? (
-        <Text
-          style={[type.body, styles.empty, { color: palette.textMuted }]}
-        >
-          This session has no boards yet.
+        <Text style={[type.body, styles.empty, { color: palette.textMuted }]}>
+          This session has no ends yet.
         </Text>
       ) : null}
     </Screen>

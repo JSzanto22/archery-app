@@ -11,6 +11,7 @@ import {
   personalBests,
 } from '../analytics/dashboard';
 import ScoreDistribution from '../components/ScoreDistribution';
+import TargetFace from '../components/TargetFace';
 import TrendChart, { TrendPoint } from '../components/TrendChart';
 import {
   Button,
@@ -20,9 +21,10 @@ import {
   SegmentedControl,
   StatTile,
 } from '../components/ui';
+import { seedDemoData } from '../db/devSeed';
 import { useDashboardData } from '../hooks/useDashboardData';
 import { RootStackParamList } from '../navigation';
-import { spacing, type, usePalette } from '../theme';
+import { radius, spacing, type, usePalette } from '../theme';
 import { formatDistance, useUnits } from '../units';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Dashboard'>;
@@ -37,10 +39,21 @@ export default function DashboardScreen({ navigation }: Props) {
   const [showFilters, setShowFilters] = useState(false);
   const [distanceFilter, setDistanceFilter] = useState<number | null>(null);
 
-  const { summaries, loading, reload } = useDashboardData(range);
+  const { summaries, groupMap, loading, reload } = useDashboardData(range);
+  const [seeding, setSeeding] = useState(false);
 
   // Coming back from marking must show the new arrows.
   useFocusEffect(useCallback(() => reload(), [reload]));
+
+  const onSeedDemo = useCallback(async () => {
+    setSeeding(true);
+    try {
+      await seedDemoData();
+      reload();
+    } finally {
+      setSeeding(false);
+    }
+  }, [reload]);
 
   const filtered = useMemo(
     () =>
@@ -179,6 +192,55 @@ export default function DashboardScreen({ navigation }: Props) {
               </View>
             ) : null}
 
+            {/* Every arrow in the range, on the face it was shot at. The
+                cloud's shape is the grouping; its offset is the sight error. */}
+            {groupMap && groupMap.points.length > 0 ? (
+              <View
+                style={[
+                  styles.mapCard,
+                  {
+                    backgroundColor: palette.surface,
+                    borderColor: palette.border,
+                  },
+                ]}
+              >
+                <View style={styles.mapHeader}>
+                  <Text style={[type.label, { color: palette.textSecondary }]}>
+                    {plural(groupMap.points.length, 'arrow')} on the boss
+                  </Text>
+                  <Text style={[type.label, { color: palette.textMuted }]}>
+                    {groupMap.mixedFaces
+                      ? `rings: ${groupMap.targetName}`
+                      : groupMap.targetName}
+                  </Text>
+                </View>
+                <View style={styles.mapFace}>
+                  <TargetFace
+                    zones={groupMap.zones}
+                    marks={groupMap.points}
+                    isPreset={groupMap.isPreset}
+                    aspectRatio={groupMap.aspectRatio}
+                    centroid={groupMap.centroid}
+                    dense
+                  />
+                </View>
+                {bests.dominantBias ? (
+                  <Text
+                    style={[styles.mapCaption, { color: palette.textMuted }]}
+                  >
+                    Crosshair marks the group centre — sitting{' '}
+                    {bests.dominantBias} of the middle.
+                  </Text>
+                ) : (
+                  <Text
+                    style={[styles.mapCaption, { color: palette.textMuted }]}
+                  >
+                    Crosshair marks the group centre.
+                  </Text>
+                )}
+              </View>
+            ) : null}
+
             <View style={styles.tileRow}>
               <StatTile
                 label="Average arrow"
@@ -251,10 +313,11 @@ export default function DashboardScreen({ navigation }: Props) {
 
             {bests.distribution.length > 0 ? (
               <>
-                <SectionHeader title="Where the arrows land" />
+                <SectionHeader title="Arrows per ring" />
                 <ScoreDistribution
                   distribution={bests.distribution}
                   maxScore={bests.distribution[0]?.score ?? 10}
+                  isPreset={groupMap?.isPreset ?? true}
                 />
               </>
             ) : null}
@@ -283,6 +346,18 @@ export default function DashboardScreen({ navigation }: Props) {
         ListEmptyComponent={
           loading ? null : (
             <View style={styles.empty}>
+              {/* Dev only: an empty dashboard shows none of what the app does,
+                  which makes the UI impossible to judge or screenshot. */}
+              {__DEV__ ? (
+                <View style={styles.devSeed}>
+                  <Button
+                    label={seeding ? 'Loading…' : 'Load demo data'}
+                    variant="tonal"
+                    disabled={seeding}
+                    onPress={onSeedDemo}
+                  />
+                </View>
+              ) : null}
               {/* A quiet quote of the target face — the app's motif. */}
               <View style={[styles.emptyRingOuter, { borderColor: palette.accent }]}>
                 <View
@@ -397,6 +472,22 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   tileRow: { flexDirection: 'row', gap: spacing.sm },
+  mapCard: {
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  mapHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: spacing.sm,
+  },
+  // The face is the hero here, but it should not push everything else off
+  // the first screen — capped so the stats stay in view beneath it.
+  mapFace: { alignSelf: 'center', width: '78%', maxWidth: 320 },
+  mapCaption: { ...type.label, fontWeight: '400', marginTop: spacing.sm },
   countRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -405,6 +496,7 @@ const styles = StyleSheet.create({
   },
   countLine: { ...type.label, fontWeight: '400', flex: 1 },
   empty: { alignItems: 'center', paddingVertical: spacing.xl },
+  devSeed: { marginBottom: spacing.lg },
   emptyRingOuter: {
     width: 64,
     height: 64,

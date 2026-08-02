@@ -170,7 +170,7 @@ export default function MarkingScreen({ navigation, route }: Props) {
       {/* Three numbers, no card chrome — the stats speak for themselves. */}
       <View style={styles.statRow}>
         <Stat
-          label="Round score"
+          label="End score"
           value={String(total)}
           caption={
             arrows.length > 0 ? `of ${arrows.length * best} possible` : '—'
@@ -179,7 +179,7 @@ export default function MarkingScreen({ navigation, route }: Props) {
         <Stat
           label="Arrows"
           value={String(arrows.length)}
-          caption={`board ${round.roundOrder}`}
+          caption={`end ${round.roundOrder}`}
         />
         <Stat
           label="Grouping"
@@ -235,7 +235,7 @@ export default function MarkingScreen({ navigation, route }: Props) {
 
       <View style={styles.mainActions}>
         <View style={styles.actionFlex}>
-          <Button label="Next board" variant="tonal" block onPress={onNextRound} />
+          <Button label="Next end" variant="tonal" block onPress={onNextRound} />
         </View>
         <View style={styles.actionFlex}>
           <Button

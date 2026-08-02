@@ -11,6 +11,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ensurePresetTargets } from './src/db/bootstrap';
+import { clearAllSessions, seedDemoData } from './src/db/devSeed';
 import Navigation from './src/navigation';
 import { usePalette } from './src/theme';
 
@@ -33,6 +34,18 @@ export default function App() {
         // Bundled World Archery faces must exist before the first session can
         // be scored, and must not depend on having reached the network.
         await ensurePresetTargets();
+
+        if (__DEV__) {
+          // Handles for the browser console and automated checks, so demo data
+          // can be loaded without tapping through the UI. Statically imported:
+          // a dynamic import here leaves Metro's web graph unable to resolve
+          // the chunk after a fast refresh.
+          Object.assign(globalThis, {
+            __seedDemo: seedDemoData,
+            __clearSessions: clearAllSessions,
+          });
+        }
+
         setReady(true);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));

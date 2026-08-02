@@ -13,7 +13,13 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 
 import { Palette, radius, spacing, usePalette } from '../theme';
@@ -50,8 +56,20 @@ export default function TrendChart({
   height = 160,
 }: Props) {
   const palette = usePalette();
-  const [width, setWidth] = useState(0);
+  const [measured, setMeasured] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
+  const { width: windowWidth } = useWindowDimensions();
+
+  /**
+   * Width falls back to the window minus the screen's horizontal padding.
+   *
+   * Relying on `onLayout` alone left the chart at zero width, which made the
+   * scale null and dropped every chart into the "not enough data" branch — so
+   * the trends silently never drew, even with fourteen sessions loaded. A
+   * layout pass that never arrives must not be indistinguishable from having
+   * no data.
+   */
+  const width = measured || Math.max(0, windowWidth - spacing.md * 2);
 
   const scale = useMemo(() => {
     if (points.length === 0 || width === 0) return null;
@@ -106,7 +124,7 @@ export default function TrendChart({
   return (
     <View
       style={styles.card}
-      onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+      onLayout={(e) => setMeasured(e.nativeEvent.layout.width)}
     >
       <View style={styles.header}>
         <Text style={styles.title}>{title}</Text>
@@ -122,7 +140,7 @@ export default function TrendChart({
         ) : null}
       </View>
 
-      {points.length < 2 || !scale ? (
+      {points.length < 2 ? (
         <View style={[styles.empty, { height }]}>
           <Text style={styles.emptyText}>
             {points.length === 0
@@ -130,6 +148,9 @@ export default function TrendChart({
               : 'One session so far — a trend needs at least two.'}
           </Text>
         </View>
+      ) : !scale ? (
+        // Measuring. Reserve the space rather than claim there is no data.
+        <View style={[styles.empty, { height }]} />
       ) : (
         <>
           <Svg width={width} height={height}>

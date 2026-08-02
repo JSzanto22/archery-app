@@ -38,6 +38,7 @@ import Svg, {
   Ellipse,
   G,
   Image as SvgImage,
+  Line,
   Polygon,
   Rect,
 } from 'react-native-svg';
@@ -73,6 +74,14 @@ interface Props {
   /** faceWidth / faceHeight. Keeps a non-square face from being drawn square. */
   aspectRatio?: number;
   selectedMarkId?: string | null;
+  /**
+   * Scatter mode: many small translucent dots instead of full marks. For
+   * showing hundreds of arrows at once, where full-sized marks would merge
+   * into a solid blob and hide the very shape being looked at.
+   */
+  dense?: boolean;
+  /** Draw a crosshair at the group's centre — where the sight is actually pointing. */
+  centroid?: { x: number; y: number } | null;
   /** Commit a new mark. Absent = read-only rendering. */
   onPlace?: (x: number, y: number) => void;
   /** Commit a moved mark. */
@@ -97,6 +106,8 @@ export default function TargetFace({
   isPreset = true,
   aspectRatio = 1,
   selectedMarkId,
+  dense = false,
+  centroid = null,
   onPlace,
   onMoveMark,
   onSelectMark,
@@ -277,6 +288,25 @@ export default function TargetFace({
           const x = moving ? drag!.x : mark.x;
           const y = moving ? drag!.y : mark.y;
 
+          if (dense) {
+            // Translucent so overlapping arrows accumulate into visible
+            // density — the group's shape emerges from where they pile up.
+            return (
+              <Circle
+                key={mark.id}
+                cx={x}
+                cy={y}
+                r={MARK_RADIUS * 0.5}
+                fill={
+                  mark.scoreValue === 0 ? arrowMark.missFill : arrowMark.fill
+                }
+                opacity={0.55}
+                stroke={arrowMark.stroke}
+                strokeWidth={MARK_RADIUS * 0.12}
+              />
+            );
+          }
+
           return (
             <G key={mark.id}>
               <Circle
@@ -306,6 +336,36 @@ export default function TargetFace({
             </G>
           );
         })}
+
+        {/* Group centre: where the sight is really pointing, versus the middle. */}
+        {centroid ? (
+          <G>
+            <Line
+              x1={centroid.x - 0.05}
+              y1={centroid.y}
+              x2={centroid.x + 0.05}
+              y2={centroid.y}
+              stroke={arrowMark.stroke}
+              strokeWidth={0.006}
+            />
+            <Line
+              x1={centroid.x}
+              y1={centroid.y - 0.05}
+              x2={centroid.x}
+              y2={centroid.y + 0.05}
+              stroke={arrowMark.stroke}
+              strokeWidth={0.006}
+            />
+            <Circle
+              cx={centroid.x}
+              cy={centroid.y}
+              r={0.028}
+              fill="none"
+              stroke={arrowMark.stroke}
+              strokeWidth={0.006}
+            />
+          </G>
+        ) : null}
 
         {/* Live preview of a mark being placed. */}
         {drag?.mode === 'new' ? (

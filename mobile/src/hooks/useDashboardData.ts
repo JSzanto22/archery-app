@@ -20,15 +20,37 @@ import {
 } from '../analytics/dashboard';
 import { collections } from '../db';
 import { findPreset } from '../db/presets';
+import { centroid } from '../scoring/grouping';
+import { Zone } from '../scoring/scoring';
+
+/**
+ * Every arrow in the range, plotted on the face it was most often shot at.
+ *
+ * The signature view of the sport, and pure data rather than decoration: the
+ * shape of the cloud is the grouping, and its offset from the middle is the
+ * sight error.
+ */
+export interface GroupMapData {
+  zones: Zone[];
+  isPreset: boolean;
+  aspectRatio: number;
+  targetName: string;
+  points: Array<{ id: string; x: number; y: number; scoreValue: number }>;
+  centroid: { x: number; y: number } | null;
+  /** True when the range mixes faces, so the rings are only the dominant one. */
+  mixedFaces: boolean;
+}
 
 export interface DashboardData {
   summaries: SessionSummary[];
+  groupMap: GroupMapData | null;
   loading: boolean;
   reload: () => void;
 }
 
 export function useDashboardData(range: RangeKey): DashboardData {
   const [summaries, setSummaries] = useState<SessionSummary[]>([]);
+  const [groupMap, setGroupMap] = useState<GroupMapData | null>(null);
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
 
@@ -52,6 +74,7 @@ export function useDashboardData(range: RangeKey): DashboardData {
       if (sessions.length === 0) {
         if (!cancelled) {
           setSummaries([]);
+          setGroupMap(null);
           setLoading(false);
         }
         return;
@@ -141,8 +164,54 @@ export function useDashboardData(range: RangeKey): DashboardData {
         .filter((s) => s.arrows.length > 0)
         .map(summarizeSession);
 
+      // The group map draws every arrow on whichever face was shot most in the
+      // range — the rings have to come from a real target, not an invented one.
+      const faceCounts = new Map<string, number>();
+      for (const round of rounds) {
+        const count = arrowsByRound.get(round.id)?.length ?? 0;
+        if (count > 0) {
+          faceCounts.set(
+            round.targetId,
+            (faceCounts.get(round.targetId) ?? 0) + count,
+          );
+        }
+      }
+
+      let map: GroupMapData | null = null;
+
+      if (faceCounts.size > 0) {
+        const [dominantId] = [...faceCounts.entries()].sort(
+          (a, b) => b[1] - a[1],
+        )[0]!;
+
+        const dominant = targetById.get(dominantId);
+
+        if (dominant) {
+          const zones = await dominant.toScoringZones();
+          const preset = findPreset(dominantId);
+
+          const points = arrows.map((a) => ({
+            id: a.id,
+            x: a.x,
+            y: a.y,
+            scoreValue: a.scoreValue,
+          }));
+
+          map = {
+            zones,
+            isPreset: dominant.type === 'preset',
+            aspectRatio: dominant.aspectRatio ?? preset?.aspectRatio ?? 1,
+            targetName: dominant.name,
+            points,
+            centroid: centroid(points),
+            mixedFaces: faceCounts.size > 1,
+          };
+        }
+      }
+
       if (!cancelled) {
         setSummaries(result);
+        setGroupMap(map);
         setLoading(false);
       }
     })();
@@ -152,5 +221,5 @@ export function useDashboardData(range: RangeKey): DashboardData {
     };
   }, [range, tick]);
 
-  return { summaries, loading, reload };
+  return { summaries, groupMap, loading, reload };
 }

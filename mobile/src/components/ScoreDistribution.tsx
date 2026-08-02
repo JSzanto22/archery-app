@@ -10,15 +10,20 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { fonts, radius, spacing, type, usePalette } from '../theme';
+import { fonts, radius, spacing, type, usePalette, zoneColors } from '../theme';
 
 interface Props {
   distribution: Array<{ score: number; count: number }>;
-  /** Ring colours are shown when the face is a standard World Archery one. */
   maxScore: number;
+  /** Standard face: bars wear the real ring colours rather than one accent. */
+  isPreset?: boolean;
 }
 
-export default function ScoreDistribution({ distribution, maxScore }: Props) {
+export default function ScoreDistribution({
+  distribution,
+  maxScore,
+  isPreset = true,
+}: Props) {
   const palette = usePalette();
 
   if (distribution.length === 0) return null;
@@ -30,11 +35,24 @@ export default function ScoreDistribution({ distribution, maxScore }: Props) {
     <View style={styles.wrap}>
       {distribution.map(({ score, count }) => {
         const share = count / total;
-        // Intensity tracks the score: a 10 is the strongest, a miss the faintest.
-        const weight = maxScore > 0 ? Math.max(0.18, score / maxScore) : 0.5;
+
+        // Each bar wears its ring's own colour — gold, red, blue, black,
+        // white. An archer reads this the way they read the boss, and it
+        // costs nothing: the score is direct-labelled either way, so colour
+        // is reinforcement rather than the only channel.
+        const ring =
+          score === 0
+            ? { fill: palette.critical, stroke: palette.critical }
+            : zoneColors(score, maxScore, isPreset);
 
         return (
           <View key={score} style={styles.row}>
+            <View
+              style={[
+                styles.pip,
+                { backgroundColor: ring.fill, borderColor: ring.stroke },
+              ]}
+            />
             <Text
               style={[styles.score, { color: palette.textPrimary }]}
               numberOfLines={1}
@@ -42,9 +60,7 @@ export default function ScoreDistribution({ distribution, maxScore }: Props) {
               {score === 0 ? 'M' : score}
             </Text>
 
-            <View
-              style={[styles.track, { backgroundColor: palette.gridline }]}
-            >
+            <View style={[styles.track, { backgroundColor: palette.gridline }]}>
               <View
                 style={[
                   styles.bar,
@@ -52,8 +68,10 @@ export default function ScoreDistribution({ distribution, maxScore }: Props) {
                     // Widths are relative to the busiest ring, so the shape of
                     // the distribution stays visible even when it is flat.
                     width: `${Math.max(2, (count / peak) * 100)}%`,
-                    backgroundColor: palette.accent,
-                    opacity: weight,
+                    backgroundColor: ring.fill,
+                    // White and black rings would otherwise vanish into one
+                    // theme or the other.
+                    borderColor: ring.stroke,
                   },
                 ]}
               />
@@ -78,8 +96,14 @@ export default function ScoreDistribution({ distribution, maxScore }: Props) {
 const styles = StyleSheet.create({
   wrap: { gap: spacing.xs },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  pip: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
   score: {
-    width: 22,
+    width: 18,
     textAlign: 'right',
     fontFamily: fonts.display,
     fontSize: 14,
@@ -87,11 +111,15 @@ const styles = StyleSheet.create({
   },
   track: {
     flex: 1,
-    height: 10,
+    height: 12,
     borderRadius: radius.pill,
     overflow: 'hidden',
   },
-  bar: { height: '100%', borderRadius: radius.pill },
+  bar: {
+    height: '100%',
+    borderRadius: radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
   count: {
     width: 62,
     ...type.label,
