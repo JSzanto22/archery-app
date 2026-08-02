@@ -1,38 +1,112 @@
 # mobile
 
-React Native client. This is where nearly all the logic lives — see the
-architecture principle in the [root README](../README.md).
+React Native client, Expo SDK 53 with a custom dev client. This is where nearly
+all the logic lives — see the architecture principle in the
+[root README](../README.md).
 
-## Responsibilities
+## Running it
 
-- **Local source of truth.** WatermelonDB mirrors the Postgres schema; capture
-  works fully offline and syncs later via `/sync/push` and `/sync/pull`.
-- **Scoring.** Test an arrow's normalized (x, y) against `target_zones` in
-  `zone_index` order (innermost first); first zone containing the point wins.
-- **Analytics.** Score trends, grouping (avg arrow distance from centroid), heat
-  maps, personal bests — all computed on-device from local data, never stored.
-- **Capture.** Photo of the target face, tap-to-mark arrows over it.
-- **Auth.** Cognito (email/password, Google, Apple); JWT attached to API calls.
+WatermelonDB uses native modules and the JSI adapter, so **Expo Go will not
+work**. You need a dev client:
 
-## Screens and their data contracts
+```bash
+npm install
+npx expo prebuild
+npx expo run:android
+```
 
-Per-screen information requirements are specified in
-[`docs/technical-design.md`](../docs/technical-design.md) Part 3:
+Then day to day:
 
-- Auth / Onboarding — login methods, research-consent prompt, dev-login (debug builds)
-- Home / Dashboard — date range, trend series, heat map, personal bests, session list
-- Session Detail — metadata, ordered rounds, per-round score and grouping, totals
-- Round Detail / Marking — zone geometry, optional photo background, live score
-- Target Library — presets + custom targets with zone definitions
-- Custom Target Builder — outline capture, shape primitives, per-zone scores
-- Gear Management — profile list and edit forms
+```bash
+npm start
+```
 
-## Conventions
+`npx expo run:ios` needs macOS. From Windows, build iOS through EAS instead.
 
-- **Generate UUIDs client-side** for every row. Never wait on the server for an id.
-- **Normalized coordinates.** Arrow x/y and all zone geometry are 0–1 relative to
-  the target face, so rendering and scoring are resolution-independent.
-- **Don't persist derived values.** Grouping and distance-from-center are computed
-  on read. The sole exception is `arrows.score_value`, stored at mark time so
-  historical scores survive later edits to a custom target.
-- Debug builds point at the dev stack automatically.
+```bash
+npm test
+npm run typecheck
+```
+
+## What is built
+
+The end-to-end slice: create a session → mark arrows on the face → live score
+and grouping → save locally → review the session → see it on the dashboard.
+Everything works with no network and no backend.
+
+| Area | State |
+| --- | --- |
+| Scoring geometry (circle / ellipse / rectangle / polygon, rotation) | Done, 26 tests |
+| Grouping, accuracy offset, heat-map grid | Done |
+| Local store, WatermelonDB models, bundled presets | Done |
+| Dashboard, new session, marking, session detail | Done |
+| Sync client | Written, untested against a live server |
+| Auth (Cognito), photo upload to S3, target builder, gear management | Not started |
+
+## Layout
+
+```
+src/
+├── scoring/      geometry.ts, scoring.ts, grouping.ts  — pure, no React, no db
+├── analytics/    dashboard.ts                          — pure aggregation
+├── db/           schema, models, actions, presets, sync, bootstrap
+├── components/   TargetFace, TrendChart, StatTile
+├── screens/      Dashboard, NewSession, Marking, SessionDetail
+└── hooks/        useDashboardData
+```
+
+`scoring/` and `analytics/` are deliberately free of React and of the database.
+They are the parts most worth testing and the parts most likely to be reused by
+the CV work in Phase 2, and neither needs a component tree to run.
+
+## Conventions that are load-bearing
+
+**Client-generated UUIDs.** `src/db/index.ts` replaces WatermelonDB's default id
+generator with `expo-crypto`'s `randomUUID`. Watermelon's built-in generator
+makes short random strings, but the server's primary keys are UUIDs, and the
+whole offline story rests on the device minting ids the server accepts
+unchanged. Remove that line and every record created offline is rejected on
+push.
+
+**Normalized 0–1 coordinates everywhere.** Arrow positions and zone geometry are
+fractions of the target face. Exactly one place converts a pixel into a
+normalized coordinate — the tap handler in `TargetFace` — so there is one place
+for that conversion to be wrong rather than several.
+
+**Derived values are never stored.** Grouping, averages, heat maps and personal
+bests are computed on read. The single exception is `arrows.score_value`,
+resolved at mark time so a score survives a later edit to a custom target.
+
+**Deletes use `markAsDeleted`, never `destroyPermanently`.** Watermelon keeps a
+local tombstone so the next push can tell the server the row is gone. Destroying
+outright removes it here and leaves it alive on every other device.
+
+## Two things found while building this
+
+**Line cutters need a tolerance.** An arrow whose centre sits exactly on a
+scoring line takes the higher value. In floating point that rule silently fails:
+on the WA 10 ring, r = 0.05 and a mark at x = 0.55 computes a squared distance of
+0.0025000000000000044 against r² of 0.0025000000000000005, and scores a 9.
+`geometry.ts` carries a 1e-9 epsilon for this — well below both the stored
+6-decimal precision and any physically meaningful distance. The SQL scoring
+helper in the seed does not have it, so a boundary arrow can differ by one point
+between the two. It only affects seeded data, since real scoring happens here.
+
+**Grouping on a 3-spot needs the aim points.** Measuring spread about a single
+centroid on a multi-spot face describes the layout of the target, not the
+archer: it returns roughly a third of the face height however well they shot.
+`groupSpreadMultiSpot` translates each mark into the frame of its nearest aim
+point and measures the pooled cloud. The obvious alternative — cluster per spot
+and average — fails on the standard indoor round, where exactly one arrow goes
+in each face, every cluster holds a single point, and the archer gets no
+grouping figure at all.
+
+## Known gaps
+
+- The sync client is written against the API contract but has never run against
+  a live server. `/sync/pull` also cannot report deletions yet — see the writeup
+  in [`backend/db/README.md`](../db/README.md).
+- `targets.aspect_ratio` exists locally but not in the Postgres schema. Non-square
+  faces need it to score a photo correctly; it is currently sourced from the
+  bundled presets.
+- Auth is absent. `runSync` expects a token provider; nothing supplies one yet.
