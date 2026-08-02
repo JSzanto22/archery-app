@@ -1,17 +1,20 @@
 /**
  * Design tokens.
  *
+ * The visual language is deliberately small: one accent, four type steps, an
+ * 8dp spacing grid, 48dp touch targets, and flat hairline-separated surfaces.
+ * Direction and rationale: docs/ui-redesign-direction.md.
+ *
  * Chart and chrome colours are the validated data-viz palette; the two series
- * hues were run through the palette validator and pass the lightness band,
- * chroma floor, CVD separation, normal-vision floor and contrast checks against
- * both surfaces.
+ * hues passed the palette validator (lightness band, chroma floor, CVD
+ * separation, normal-vision floor, contrast) against both surfaces.
  *
  * Target-face colours are a separate matter and deliberately not from that
  * palette: they depict a physical object whose colours are fixed by World
  * Archery. A blue 10 ring would be wrong in the way a green stop sign is wrong.
  */
 
-import { useColorScheme } from 'react-native';
+import { TextStyle, useColorScheme } from 'react-native';
 
 export interface Palette {
   surface: string;
@@ -22,7 +25,13 @@ export interface Palette {
   gridline: string;
   baseline: string;
   border: string;
-  /** Score trend. */
+  /** The one accent. Primary action per screen, live data, nothing else. */
+  accent: string;
+  onAccent: string;
+  /** Quiet accent-tinted fill for selected chips and tonal buttons. */
+  accentTonal: string;
+  onAccentTonal: string;
+  /** Score trend. Same hue as accent by design — live data is accent's job. */
   series1: string;
   /** Grouping trend. Never shares an axis with series1 — separate charts. */
   series2: string;
@@ -39,6 +48,10 @@ const light: Palette = {
   gridline: '#e1e0d9',
   baseline: '#c3c2b7',
   border: 'rgba(11,11,11,0.10)',
+  accent: '#2a78d6',
+  onAccent: '#ffffff',
+  accentTonal: '#e7f0fb',
+  onAccentTonal: '#1c5cab',
   series1: '#2a78d6',
   series2: '#eb6834',
   good: '#006300',
@@ -54,6 +67,10 @@ const dark: Palette = {
   gridline: '#2c2c2a',
   baseline: '#383835',
   border: 'rgba(255,255,255,0.10)',
+  accent: '#3987e5',
+  onAccent: '#ffffff',
+  accentTonal: '#1a2b41',
+  onAccentTonal: '#86b6ef',
   series1: '#3987e5',
   series2: '#d95926',
   good: '#0ca30c',
@@ -64,6 +81,7 @@ export function usePalette(): Palette {
   return useColorScheme() === 'dark' ? dark : light;
 }
 
+/** 8dp grid. Section rhythm uses lg/xl; within-component gaps use xs/sm. */
 export const spacing = {
   xs: 4,
   sm: 8,
@@ -74,9 +92,27 @@ export const spacing = {
 
 export const radius = {
   sm: 4,
-  md: 8,
-  lg: 14,
+  md: 12,
+  /** Cards and grouped surfaces. */
+  lg: 16,
+  /** Buttons and chips — fully rounded, the Google idiom. */
+  pill: 999,
 } as const;
+
+/** Minimum pressable size (dp). Glyphs may be smaller; the target may not. */
+export const TOUCH_TARGET = 48;
+
+/**
+ * The four-step type scale. Nothing renders text outside these steps plus a
+ * weight tweak; if a fifth step feels needed, the hierarchy is wrong.
+ */
+export const type: Record<'display' | 'title' | 'body' | 'label', TextStyle> = {
+  /** Hero numerals. Always pair with fontVariant tabular-nums for figures. */
+  display: { fontSize: 32, fontWeight: '700', letterSpacing: -0.5, lineHeight: 38 },
+  title: { fontSize: 22, fontWeight: '600', lineHeight: 28 },
+  body: { fontSize: 15, fontWeight: '400', lineHeight: 21 },
+  label: { fontSize: 12, fontWeight: '500', lineHeight: 16 },
+};
 
 /**
  * World Archery face colours, by score band. Fixed by the sport.
