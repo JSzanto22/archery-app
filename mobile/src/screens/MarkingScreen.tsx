@@ -8,7 +8,7 @@
 
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import TargetFace, { Mark } from '../components/TargetFace';
@@ -38,7 +38,14 @@ export default function MarkingScreen({ navigation, route }: Props) {
   const [zones, setZones] = useState<Zone[]>([]);
   const [arrows, setArrows] = useState<Arrow[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+
+  /**
+   * Write re-entry guard. A ref, not state: `setBusy(true)` does not take
+   * effect until the next render, so two writes dispatched in the same tick
+   * would both read `busy === false` and both commit — the same stale-read
+   * class of bug as the drag state.
+   */
+  const busyRef = useRef(false);
 
   const load = useCallback(async () => {
     const loadedRound = await collections.rounds.find(roundId);
@@ -76,28 +83,28 @@ export default function MarkingScreen({ navigation, route }: Props) {
       : groupSpread(points, { aspectRatio });
 
   const onPlace = async (x: number, y: number) => {
-    if (!round || !target || busy) return;
-    setBusy(true);
+    if (!round || !target || busyRef.current) return;
+    busyRef.current = true;
     try {
       await addArrow(round, target, x, y);
       await load();
     } finally {
-      setBusy(false);
+      busyRef.current = false;
     }
   };
 
   const onMoveMark = async (markId: string, x: number, y: number) => {
-    if (!target || busy) return;
+    if (!target || busyRef.current) return;
     const mark = arrows.find((a) => a.id === markId);
     if (!mark) return;
 
-    setBusy(true);
+    busyRef.current = true;
     try {
       // Score is re-resolved at the new position inside moveArrow.
       await moveArrow(mark, target, x, y);
       await load();
     } finally {
-      setBusy(false);
+      busyRef.current = false;
     }
   };
 

@@ -50,6 +50,12 @@ import {
 } from '../scoring/geometry';
 import { maxZoneScore, scoreArrow, Zone } from '../scoring/scoring';
 import { arrowMark, fonts, radius, usePalette, zoneColors } from '../theme';
+import {
+  DragState,
+  beginDrag,
+  finishDrag,
+  updateDrag,
+} from './markingGesture';
 
 export interface Mark {
   id: string;
@@ -78,48 +84,11 @@ interface Props {
 /** Mark radius in viewBox units. */
 const MARK_RADIUS = 0.018;
 
-/** Finger-sized radius (px) for grabbing an existing mark. */
-const GRAB_SLOP_PX = 24;
-
-/** Movement (px) below which a gesture counts as a tap, not a drag. */
-const TAP_SLOP_PX = 8;
-
 /** Loupe: rendered size (px), and the slice of face it magnifies (0-1). */
 const LOUPE_SIZE = 104;
 const LOUPE_REGION = 0.16;
 /** Loupe floats this far above the touch so the finger never covers it. */
 const LOUPE_LIFT = 76;
-
-interface DragState {
-  /** 'new' places a fresh mark; 'move' relocates an existing one. */
-  mode: 'new' | 'move';
-  markId?: string;
-  /** Normalized AIM position — where the mark will land. */
-  x: number;
-  y: number;
-  /** Aim position in pixels, for placing the loupe. */
-  px: number;
-  py: number;
-  /**
-   * Where the FINGER first touched, in pixels. `moved` is measured against
-   * this, never against the previous event — per-event deltas of a slow,
-   * careful drag all sit under the tap slop, which mis-classified precise
-   * drags as taps (the mark snapped back on release).
-   */
-  startPx: number;
-  startPy: number;
-  /**
-   * Grab offset (aim minus finger) so a mark picked up by its edge moves
-   * relative to where it was, instead of teleporting under the fingertip.
-   */
-  offsetX: number;
-  offsetY: number;
-  moved: boolean;
-}
-
-function clamp01(v: number): number {
-  return Math.min(1, Math.max(0, v));
-}
 
 export default function TargetFace({
   zones,
@@ -141,8 +110,23 @@ export default function TargetFace({
   sizeRef.current = size;
   const marksRef = useRef(marks);
   marksRef.current = marks;
+
+  /**
+   * The ref — not the state — is the live drag.
+   *
+   * Gesture callbacks fire far faster than React re-renders, so a ref that is
+   * only refreshed during render (`dragRef.current = drag`) hands every
+   * callback a value lagging the pointer: the release then commits stale
+   * coordinates, and a stale `moved` flag routes a real drag into the tap
+   * branch. Both reported bugs came from that. `writeDrag` updates the ref
+   * synchronously and the state purely so the loupe re-renders.
+   */
   const dragRef = useRef<DragState | null>(null);
-  dragRef.current = drag;
+
+  const writeDrag = useCallback((next: DragState | null) => {
+    dragRef.current = next;
+    setDrag(next);
+  }, []);
 
   const interactive = Boolean(onPlace || onMoveMark || onSelectMark);
 
@@ -167,119 +151,49 @@ export default function TargetFace({
     });
   }, []);
 
-  const findMarkAt = useCallback((px: number, py: number): Mark | null => {
-    const { w, h } = sizeRef.current;
-    if (!w || !h) return null;
-
-    let best: Mark | null = null;
-    let bestDist = GRAB_SLOP_PX;
-
-    for (const mark of marksRef.current) {
-      const dx = mark.x * w - px;
-      const dy = mark.y * h - py;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist <= bestDist) {
-        best = mark;
-        bestDist = dist;
-      }
-    }
-
-    return best;
-  }, []);
-
   const begin = useCallback(
     (px: number, py: number) => {
-      const { w, h } = sizeRef.current;
-      if (!w || !h) return;
-
-      const grabbed = findMarkAt(px, py);
-
-      if (grabbed) {
-        setDrag({
-          mode: 'move',
-          markId: grabbed.id,
-          x: grabbed.x,
-          y: grabbed.y,
-          px: grabbed.x * w,
-          py: grabbed.y * h,
-          startPx: px,
-          startPy: py,
-          offsetX: grabbed.x * w - px,
-          offsetY: grabbed.y * h - py,
-          moved: false,
-        });
-      } else if (onPlace || onSelectMark) {
-        setDrag({
-          mode: 'new',
-          x: clamp01(px / w),
-          y: clamp01(py / h),
-          px,
-          py,
-          startPx: px,
-          startPy: py,
-          offsetX: 0,
-          offsetY: 0,
-          moved: false,
-        });
-      }
+      writeDrag(
+        beginDrag(px, py, sizeRef.current, marksRef.current, {
+          canPlace: Boolean(onPlace || onSelectMark),
+        }),
+      );
     },
-    [findMarkAt, onPlace, onSelectMark],
+    [onPlace, onSelectMark, writeDrag],
   );
 
-  const update = useCallback((fingerPx: number, fingerPy: number) => {
-    const { w, h } = sizeRef.current;
-    const current = dragRef.current;
-    if (!w || !h || !current) return;
-
-    // The aim point carries the grab offset; movement is measured finger
-    // against finger-start, cumulatively.
-    const aimPx = fingerPx + current.offsetX;
-    const aimPy = fingerPy + current.offsetY;
-
-    setDrag({
-      ...current,
-      x: clamp01(aimPx / w),
-      y: clamp01(aimPy / h),
-      px: aimPx,
-      py: aimPy,
-      moved:
-        current.moved ||
-        Math.abs(fingerPx - current.startPx) > TAP_SLOP_PX ||
-        Math.abs(fingerPy - current.startPy) > TAP_SLOP_PX,
-    });
-  }, []);
+  const update = useCallback(
+    (fingerPx: number, fingerPy: number) => {
+      const current = dragRef.current;
+      if (!current) return;
+      writeDrag(updateDrag(current, fingerPx, fingerPy, sizeRef.current));
+    },
+    [writeDrag],
+  );
 
   const finish = useCallback(() => {
     // Claim the drag synchronously before committing: if the platform ever
-    // delivers a second end event for one gesture, the second call finds
-    // nothing to commit instead of placing a duplicate arrow.
+    // delivers a second end event for one gesture, the second call sees null
+    // and returns `none` instead of placing a duplicate arrow.
     const current = dragRef.current;
-    dragRef.current = null;
-    setDrag(null);
-    if (!current) return;
+    writeDrag(null);
 
-    if (current.mode === 'move') {
-      if (current.moved) {
-        onMoveMark?.(current.markId!, current.x, current.y);
-      } else {
-        // A press on a mark that never moved is a tap: toggle selection.
-        onSelectMark?.(
-          current.markId === selectedMarkId ? null : current.markId!,
-        );
-      }
-      return;
+    const intent = finishDrag(current, selectedMarkId);
+
+    switch (intent.type) {
+      case 'place':
+        onPlace?.(intent.x, intent.y);
+        break;
+      case 'move':
+        onMoveMark?.(intent.markId, intent.x, intent.y);
+        break;
+      case 'select':
+        onSelectMark?.(intent.markId);
+        break;
+      case 'none':
+        break;
     }
-
-    // Tap on empty space while a mark is selected deselects — it does not
-    // place. This is the Figma/Excalidraw convention, and without it the
-    // natural "tap away to deselect" gesture spawns an unwanted arrow.
-    if (!current.moved && selectedMarkId) {
-      onSelectMark?.(null);
-      return;
-    }
-
-    onPlace?.(current.x, current.y);
-  }, [onMoveMark, onPlace, onSelectMark, selectedMarkId]);
+  }, [onMoveMark, onPlace, onSelectMark, selectedMarkId, writeDrag]);
 
   const gesture = useMemo(
     () =>
@@ -298,9 +212,9 @@ export default function TargetFace({
         .onFinalize((_e, success) => {
           // A cancelled gesture (scroll stole it, pointer left) discards the
           // preview rather than committing a mark nobody aimed.
-          if (!success) setDrag(null);
+          if (!success) writeDrag(null);
         }),
-    [begin, finish, interactive, measure, update],
+    [begin, finish, interactive, measure, update, writeDrag],
   );
 
   const liveScore = drag ? scoreArrow(zones, drag.x, drag.y) : null;
