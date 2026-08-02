@@ -14,7 +14,13 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import TargetFace, { Mark } from '../components/TargetFace';
 import { Button, Screen } from '../components/ui';
 import { Arrow, Round, Target, collections } from '../db';
-import { addArrow, addRound, attachLocalPhoto, deleteArrow } from '../db/actions';
+import {
+  addArrow,
+  addRound,
+  attachLocalPhoto,
+  deleteArrow,
+  moveArrow,
+} from '../db/actions';
 import { findPreset } from '../db/presets';
 import { groupSpread, groupSpreadMultiSpot } from '../scoring/grouping';
 import { Zone, maxZoneScore } from '../scoring/scoring';
@@ -69,11 +75,26 @@ export default function MarkingScreen({ navigation, route }: Props) {
       ? groupSpreadMultiSpot(points, preset.aimPoints, { aspectRatio })
       : groupSpread(points, { aspectRatio });
 
-  const onTap = async (x: number, y: number) => {
+  const onPlace = async (x: number, y: number) => {
     if (!round || !target || busy) return;
     setBusy(true);
     try {
       await addArrow(round, target, x, y);
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onMoveMark = async (markId: string, x: number, y: number) => {
+    if (!target || busy) return;
+    const mark = arrows.find((a) => a.id === markId);
+    if (!mark) return;
+
+    setBusy(true);
+    try {
+      // Score is re-resolved at the new position inside moveArrow.
+      await moveArrow(mark, target, x, y);
       await load();
     } finally {
       setBusy(false);
@@ -165,15 +186,16 @@ export default function MarkingScreen({ navigation, route }: Props) {
           isPreset={target.type === 'preset'}
           aspectRatio={aspectRatio}
           selectedMarkId={selected}
-          onTap={onTap}
-          onMarkPress={(id) => setSelected(id === selected ? null : id)}
+          onPlace={onPlace}
+          onMoveMark={onMoveMark}
+          onSelectMark={setSelected}
         />
       </View>
 
       <Text style={[styles.hint, { color: palette.textMuted }]}>
         {selected
-          ? 'Tap the highlighted mark again to deselect, or remove it below.'
-          : 'Tap where each arrow landed. Tap a mark to select it.'}
+          ? 'Drag the selected mark to move it, or remove it below.'
+          : 'Press and drag to aim — release to place. Tap a mark to select it.'}
       </Text>
 
       {/* Action hierarchy: one filled, one tonal, the rest text. */}

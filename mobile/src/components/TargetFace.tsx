@@ -1,31 +1,34 @@
 /**
- * Renders a target face from its zone geometry and handles tap-to-mark.
+ * Renders a target face from its zone geometry and owns the marking gesture.
  *
- * The face is drawn in a 0-1 viewBox and scaled by SVG, so this component
- * never converts coordinates itself beyond the single tap-to-normalized step.
- * That keeps exactly one place where a pixel becomes a normalized coordinate,
- * which is the conversion that would otherwise drift out of step with scoring.
+ * ## The interaction model
  *
- * Two things here are deliberate and easy to undo by accident:
+ * Borrowed from how annotation tools (Figma, Excalidraw, Slides) and mobile
+ * text selection actually behave, adapted to point marks:
  *
- * 1. **Sizing never depends on layout callbacks.** Height comes from the
- *    `aspectRatio` style, and the tap math measures the container at press
- *    time. Both replaced onLayout-driven versions that worked in theory and
- *    left the face invisible (zero height) or untappable (0x0 cached size) in
- *    practice, because react-native-web does not reliably deliver onLayout
- *    for this view.
+ * - **Press and drag to aim, release to place.** From the moment of touch a
+ *   preview mark, a magnifier loupe, and a live score readout follow the
+ *   finger. The loupe sits offset above the touch so the finger never hides
+ *   the point being aimed — the classic fat-finger fix. A plain tap still
+ *   places instantly (coarse entry stays fast; the drag is the precision
+ *   path).
+ * - **Tap an existing mark to select it.** Selection shows a halo ring.
+ * - **Drag an existing mark to move it** — same loupe, same live score; the
+ *   score is re-resolved on release.
+ * - Deletion is the caller's affair (a selected mark's Remove action).
  *
- * 2. **Taps are handled by one Pressable container, not by `onPress` on SVG
- *    elements.** Per-element press handling in react-native-svg behaves
- *    differently on web and native, and the raw responder props don't fire at
- *    all through react-native-web. One Pressable plus a hit test against
- *    existing marks behaves identically everywhere. The tap position comes
- *    from `locationX` where the platform provides it (native) and falls back
- *    to `pageX` minus the container's own window offset (web).
+ * Gestures use react-native-gesture-handler's Pan, which delivers
+ * view-relative coordinates on both native and web — the raw responder props
+ * never fire through react-native-web, which is why this file must not go
+ * back to onStartShouldSetResponder.
+ *
+ * All geometry is normalized 0-1; exactly one place (this file) converts
+ * pixels to normalized coordinates.
  */
 
-import React, { useCallback, useMemo, useRef } from 'react';
-import { GestureResponderEvent, Pressable, View } from 'react-native';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Svg, {
   Circle,
   Ellipse,
@@ -41,8 +44,8 @@ import {
   PolygonParams,
   RectangleParams,
 } from '../scoring/geometry';
-import { maxZoneScore, Zone } from '../scoring/scoring';
-import { arrowMark, zoneColors } from '../theme';
+import { maxZoneScore, scoreArrow, Zone } from '../scoring/scoring';
+import { arrowMark, fonts, radius, usePalette, zoneColors } from '../theme';
 
 export interface Mark {
   id: string;
@@ -60,15 +63,45 @@ interface Props {
   /** faceWidth / faceHeight. Keeps a non-square face from being drawn square. */
   aspectRatio?: number;
   selectedMarkId?: string | null;
-  onTap?: (x: number, y: number) => void;
-  onMarkPress?: (markId: string) => void;
+  /** Commit a new mark. Absent = read-only rendering. */
+  onPlace?: (x: number, y: number) => void;
+  /** Commit a moved mark. */
+  onMoveMark?: (markId: string, x: number, y: number) => void;
+  /** Toggle selection of an existing mark (null clears). */
+  onSelectMark?: (markId: string | null) => void;
 }
 
 /** Mark radius in viewBox units. */
 const MARK_RADIUS = 0.018;
 
-/** Finger-sized target for selecting an existing mark, in pixels. */
-const MARK_HIT_SLOP_PX = 22;
+/** Finger-sized radius (px) for grabbing an existing mark. */
+const GRAB_SLOP_PX = 24;
+
+/** Movement (px) below which a gesture counts as a tap, not a drag. */
+const TAP_SLOP_PX = 8;
+
+/** Loupe: rendered size (px), and the slice of face it magnifies (0-1). */
+const LOUPE_SIZE = 104;
+const LOUPE_REGION = 0.16;
+/** Loupe floats this far above the touch so the finger never covers it. */
+const LOUPE_LIFT = 76;
+
+interface DragState {
+  /** 'new' places a fresh mark; 'move' relocates an existing one. */
+  mode: 'new' | 'move';
+  markId?: string;
+  /** Normalized position. */
+  x: number;
+  y: number;
+  /** Pixel position, for placing the loupe. */
+  px: number;
+  py: number;
+  moved: boolean;
+}
+
+function clamp01(v: number): number {
+  return Math.min(1, Math.max(0, v));
+}
 
 export default function TargetFace({
   zones,
@@ -77,12 +110,23 @@ export default function TargetFace({
   isPreset = true,
   aspectRatio = 1,
   selectedMarkId,
-  onTap,
-  onMarkPress,
+  onPlace,
+  onMoveMark,
+  onSelectMark,
 }: Props) {
+  const palette = usePalette();
+  const [drag, setDrag] = useState<DragState | null>(null);
+  const [size, setSize] = useState({ w: 0, h: 0 });
+
+  const containerRef = useRef<View>(null);
+  const sizeRef = useRef(size);
+  sizeRef.current = size;
   const marksRef = useRef(marks);
   marksRef.current = marks;
-  const containerRef = useRef<View>(null);
+  const dragRef = useRef<DragState | null>(null);
+  dragRef.current = drag;
+
+  const interactive = Boolean(onPlace || onMoveMark || onSelectMark);
 
   const maxScore = useMemo(() => maxZoneScore(zones), [zones]);
 
@@ -93,81 +137,160 @@ export default function TargetFace({
     [zones],
   );
 
-  const placeMark = useCallback(
-    (px: number, py: number, width: number, height: number) => {
-      const x = px / width;
-      const y = py / height;
-
-      // A tap outside the face is a miss the archer meant to record; a tap
-      // outside the view is a stray gesture. Only the latter is discarded.
-      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-      if (x < 0 || x > 1 || y < 0 || y > 1) return;
-
-      // Selecting an existing mark wins over adding a new one on top of it.
-      if (onMarkPress) {
-        for (const mark of marksRef.current) {
-          const dx = (mark.x - x) * width;
-          const dy = (mark.y - y) * height;
-          if (Math.sqrt(dx * dx + dy * dy) <= MARK_HIT_SLOP_PX) {
-            onMarkPress(mark.id);
-            return;
-          }
-        }
-      }
-
-      onTap?.(x, y);
-    },
-    [onMarkPress, onTap],
-  );
-
   /**
-   * The container is measured at press time, not cached from onLayout —
-   * react-native-web never delivers onLayout for this view, so a cached size
-   * stays 0x0 forever and every tap would be discarded. measureInWindow works
-   * on both platforms and also supplies the offset the web path needs, since
-   * react-native-web leaves locationX undefined.
+   * Dimensions are measured on demand, never trusted from onLayout —
+   * react-native-web does not reliably deliver onLayout for this view (the
+   * pre-gesture implementation shipped a 0x0 cached size and every tap was
+   * silently discarded).
    */
-  const handlePress = useCallback(
-    (event: GestureResponderEvent) => {
-      const { locationX, locationY, pageX, pageY } = event.nativeEvent;
+  const measure = useCallback(() => {
+    containerRef.current?.measureInWindow((_l, _t, w, h) => {
+      if (w && h) setSize({ w, h });
+    });
+  }, []);
 
-      containerRef.current?.measureInWindow((left, top, width, height) => {
-        if (!width || !height) return;
+  const findMarkAt = useCallback((px: number, py: number): Mark | null => {
+    const { w, h } = sizeRef.current;
+    if (!w || !h) return null;
 
-        const hasLocal =
-          typeof locationX === 'number' && Number.isFinite(locationX);
-        const px = hasLocal ? locationX : pageX - left;
-        const py = hasLocal ? locationY : pageY - top;
+    let best: Mark | null = null;
+    let bestDist = GRAB_SLOP_PX;
 
-        placeMark(px, py, width, height);
-      });
+    for (const mark of marksRef.current) {
+      const dx = mark.x * w - px;
+      const dy = mark.y * h - py;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= bestDist) {
+        best = mark;
+        bestDist = dist;
+      }
+    }
+
+    return best;
+  }, []);
+
+  const begin = useCallback(
+    (px: number, py: number) => {
+      const { w, h } = sizeRef.current;
+      if (!w || !h) return;
+
+      const grabbed = findMarkAt(px, py);
+
+      if (grabbed) {
+        setDrag({
+          mode: 'move',
+          markId: grabbed.id,
+          x: grabbed.x,
+          y: grabbed.y,
+          px: grabbed.x * w,
+          py: grabbed.y * h,
+          moved: false,
+        });
+      } else if (onPlace) {
+        setDrag({
+          mode: 'new',
+          x: clamp01(px / w),
+          y: clamp01(py / h),
+          px,
+          py,
+          moved: false,
+        });
+      }
     },
-    [placeMark],
+    [findMarkAt, onPlace],
   );
 
-  return (
-    <Pressable
+  const update = useCallback((px: number, py: number) => {
+    const { w, h } = sizeRef.current;
+    const current = dragRef.current;
+    if (!w || !h || !current) return;
+
+    setDrag({
+      ...current,
+      x: clamp01(px / w),
+      y: clamp01(py / h),
+      px,
+      py,
+      moved:
+        current.moved ||
+        Math.abs(px - current.px) > TAP_SLOP_PX ||
+        Math.abs(py - current.py) > TAP_SLOP_PX,
+    });
+  }, []);
+
+  const finish = useCallback(() => {
+    const current = dragRef.current;
+    setDrag(null);
+    if (!current) return;
+
+    if (current.mode === 'move') {
+      if (current.moved) {
+        onMoveMark?.(current.markId!, current.x, current.y);
+      } else {
+        // A press on a mark that never moved is a tap: toggle selection.
+        onSelectMark?.(
+          current.markId === selectedMarkId ? null : current.markId!,
+        );
+      }
+      return;
+    }
+
+    onPlace?.(current.x, current.y);
+  }, [onMoveMark, onPlace, onSelectMark, selectedMarkId]);
+
+  const gesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .enabled(interactive)
+        .runOnJS(true)
+        .minDistance(0)
+        .maxPointers(1)
+        .shouldCancelWhenOutside(false)
+        .onBegin((e) => {
+          measure();
+          begin(e.x, e.y);
+        })
+        .onUpdate((e) => update(e.x, e.y))
+        .onEnd(() => finish())
+        .onFinalize((_e, success) => {
+          // A cancelled gesture (scroll stole it, pointer left) discards the
+          // preview rather than committing a mark nobody aimed.
+          if (!success) setDrag(null);
+        }),
+    [begin, finish, interactive, measure, update],
+  );
+
+  const liveScore = drag ? scoreArrow(zones, drag.x, drag.y) : null;
+
+  // Loupe placement: above the finger, clamped inside the face horizontally.
+  const loupeLeft = drag
+    ? Math.min(Math.max(drag.px - LOUPE_SIZE / 2, 4), size.w - LOUPE_SIZE - 4)
+    : 0;
+  const loupeTop = drag ? drag.py - LOUPE_SIZE - LOUPE_LIFT + LOUPE_SIZE / 2 : 0;
+  const loupeAbove = drag ? loupeTop >= 0 : true;
+
+  const face = (
+    <View
       ref={containerRef}
+      onLayout={measure}
       style={{ width: '100%', aspectRatio }}
-      onPress={handlePress}
-      disabled={!onTap && !onMarkPress}
-      accessibilityRole={onTap ? 'button' : 'image'}
+      accessible={interactive}
+      accessibilityRole={interactive ? 'button' : 'image'}
       accessibilityLabel={
-        onTap
-          ? `Target face, ${marks.length} arrows marked. Tap to add a mark.`
+        interactive
+          ? `Target face, ${marks.length} arrows marked. Press and drag to aim a new mark; release to place it.`
           : `Target face with ${marks.length} arrow marks`
       }
     >
-      {/* The drawing is inert: every pointer event belongs to the Pressable.
-          Without this, react-native-svg's web elements take the click and the
-          press handler never fires. */}
       <Svg
         width="100%"
         height="100%"
         viewBox="0 0 1 1"
         preserveAspectRatio="none"
+        // The drawing is inert: every pointer event belongs to the gesture
+        // view. Without this, react-native-svg's web elements take the events.
         pointerEvents="none"
-        style={{ pointerEvents: 'none' }}
+        style={styles.inert}
       >
         {photoUri ? (
           <SvgImage
@@ -191,32 +314,138 @@ export default function TargetFace({
           ))}
         </G>
 
-        {marks.map((mark) => (
-          <G key={mark.id}>
+        {marks.map((mark) => {
+          // The mark being moved renders at the drag position instead.
+          const moving = drag?.mode === 'move' && drag.markId === mark.id;
+          const x = moving ? drag!.x : mark.x;
+          const y = moving ? drag!.y : mark.y;
+
+          return (
+            <G key={mark.id}>
+              <Circle
+                cx={x}
+                cy={y}
+                r={MARK_RADIUS}
+                fill={
+                  mark.scoreValue === 0 && !moving
+                    ? arrowMark.missFill
+                    : arrowMark.fill
+                }
+                stroke={arrowMark.stroke}
+                strokeWidth={MARK_RADIUS * 0.35}
+                opacity={moving ? 0.9 : 1}
+              />
+              {mark.id === selectedMarkId || moving ? (
+                <Circle
+                  cx={x}
+                  cy={y}
+                  r={MARK_RADIUS * 2.1}
+                  fill="none"
+                  stroke={arrowMark.stroke}
+                  strokeWidth={MARK_RADIUS * 0.22}
+                  strokeDasharray={moving ? undefined : `${MARK_RADIUS * 0.7}`}
+                />
+              ) : null}
+            </G>
+          );
+        })}
+
+        {/* Live preview of a mark being placed. */}
+        {drag?.mode === 'new' ? (
+          <G>
             <Circle
-              cx={mark.x}
-              cy={mark.y}
+              cx={drag.x}
+              cy={drag.y}
               r={MARK_RADIUS}
-              // The contrasting ring is what keeps a mark readable whether it
-              // lands on gold, black or white.
-              fill={mark.scoreValue === 0 ? arrowMark.missFill : arrowMark.fill}
+              fill={arrowMark.fill}
               stroke={arrowMark.stroke}
               strokeWidth={MARK_RADIUS * 0.35}
+              opacity={0.9}
             />
-            {mark.id === selectedMarkId ? (
+            <Circle
+              cx={drag.x}
+              cy={drag.y}
+              r={MARK_RADIUS * 2.1}
+              fill="none"
+              stroke={arrowMark.stroke}
+              strokeWidth={MARK_RADIUS * 0.22}
+            />
+          </G>
+        ) : null}
+      </Svg>
+
+      {/* Magnifier loupe + live score, offset so the finger hides neither. */}
+      {drag && size.w > 0 ? (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.loupeWrap,
+            {
+              left: loupeLeft,
+              top: loupeAbove ? loupeTop : drag.py + LOUPE_LIFT - LOUPE_SIZE / 2,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.loupe,
+              {
+                borderColor: palette.accent,
+                backgroundColor: palette.surface,
+              },
+            ]}
+          >
+            <Svg
+              width={LOUPE_SIZE}
+              height={LOUPE_SIZE}
+              viewBox={`${drag.x - LOUPE_REGION / 2} ${
+                drag.y - LOUPE_REGION / (2 * aspectRatio)
+              } ${LOUPE_REGION} ${LOUPE_REGION / aspectRatio}`}
+              preserveAspectRatio="none"
+            >
+              <G>
+                {paintOrder.map((zone) => (
+                  <ZoneShape
+                    key={zone.zoneIndex}
+                    zone={zone}
+                    maxScore={maxScore}
+                    isPreset={isPreset}
+                  />
+                ))}
+              </G>
+              {/* Crosshair at the exact aim point. */}
               <Circle
-                cx={mark.x}
-                cy={mark.y}
-                r={MARK_RADIUS * 2}
+                cx={drag.x}
+                cy={drag.y}
+                r={LOUPE_REGION * 0.03}
+                fill={arrowMark.stroke}
+              />
+              <Circle
+                cx={drag.x}
+                cy={drag.y}
+                r={LOUPE_REGION * 0.12}
                 fill="none"
                 stroke={arrowMark.stroke}
-                strokeWidth={MARK_RADIUS * 0.25}
+                strokeWidth={LOUPE_REGION * 0.012}
               />
-            ) : null}
-          </G>
-        ))}
-      </Svg>
-    </Pressable>
+            </Svg>
+          </View>
+          <View
+            style={[styles.scoreBubble, { backgroundColor: palette.accent }]}
+          >
+            <Text style={[styles.scoreBubbleText, { color: palette.onAccent }]}>
+              {liveScore === 0 ? 'M' : liveScore}
+            </Text>
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+
+  return interactive ? (
+    <GestureDetector gesture={gesture}>{face}</GestureDetector>
+  ) : (
+    face
   );
 }
 
@@ -297,3 +526,31 @@ function ZoneShape({
       return null;
   }
 }
+
+const styles = StyleSheet.create({
+  inert: { pointerEvents: 'none' },
+  loupeWrap: {
+    position: 'absolute',
+    alignItems: 'center',
+  },
+  loupe: {
+    width: LOUPE_SIZE,
+    height: LOUPE_SIZE,
+    borderRadius: LOUPE_SIZE / 2,
+    borderWidth: 3,
+    overflow: 'hidden',
+  },
+  scoreBubble: {
+    marginTop: 6,
+    minWidth: 34,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+  },
+  scoreBubbleText: {
+    fontFamily: fonts.display,
+    fontSize: 16,
+    fontVariant: ['tabular-nums'],
+  },
+});
