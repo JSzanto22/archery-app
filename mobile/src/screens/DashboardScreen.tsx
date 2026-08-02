@@ -1,14 +1,7 @@
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useCallback, useMemo, useState } from 'react';
-import {
-  FlatList,
-  Pressable,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -17,11 +10,18 @@ import {
   SessionSummary,
   personalBests,
 } from '../analytics/dashboard';
-import StatTile from '../components/StatTile';
 import TrendChart, { TrendPoint } from '../components/TrendChart';
+import {
+  Button,
+  Chip,
+  ListRow,
+  SectionHeader,
+  SegmentedControl,
+  StatTile,
+} from '../components/ui';
 import { useDashboardData } from '../hooks/useDashboardData';
 import { RootStackParamList } from '../navigation';
-import { Palette, radius, spacing, usePalette } from '../theme';
+import { spacing, type, usePalette } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Dashboard'>;
 
@@ -29,7 +29,6 @@ const RANGES: RangeKey[] = ['30d', '90d', '1y', 'all'];
 
 export default function DashboardScreen({ navigation }: Props) {
   const palette = usePalette();
-  const styles = makeStyles(palette);
 
   const [range, setRange] = useState<RangeKey>('90d');
   const [showFilters, setShowFilters] = useState(false);
@@ -88,7 +87,10 @@ export default function DashboardScreen({ navigation }: Props) {
   );
 
   return (
-    <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
+    <SafeAreaView
+      style={[styles.screen, { backgroundColor: palette.page }]}
+      edges={['top', 'left', 'right']}
+    >
       <FlatList
         data={listData}
         keyExtractor={(item) => item.sessionId}
@@ -99,87 +101,54 @@ export default function DashboardScreen({ navigation }: Props) {
         ListHeaderComponent={
           <View>
             <View style={styles.titleRow}>
-              <Text style={styles.screenTitle}>Your shooting</Text>
-              <Pressable
-                style={styles.newButton}
+              <Text style={[type.title, { color: palette.textPrimary }]}>
+                Your shooting
+              </Text>
+              <Button
+                label="New session"
+                variant="filled"
                 onPress={() => navigation.navigate('NewSession')}
-                accessibilityRole="button"
-              >
-                <Text style={styles.newButtonText}>New session</Text>
-              </Pressable>
+              />
             </View>
 
-            <View style={styles.rangeRow}>
-              {RANGES.map((key) => (
-                <Pressable
-                  key={key}
-                  onPress={() => setRange(key)}
-                  style={[
-                    styles.rangeChip,
-                    range === key && styles.rangeChipActive,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: range === key }}
-                >
-                  <Text
-                    style={[
-                      styles.rangeChipText,
-                      range === key && styles.rangeChipTextActive,
-                    ]}
-                  >
-                    {RANGE_LABELS[key]}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
+            <SegmentedControl
+              options={RANGES.map((key) => ({
+                value: key,
+                label: RANGE_LABELS[key],
+              }))}
+              value={range}
+              onChange={setRange}
+            />
 
             {/* Advanced filters stay collapsed until asked for. */}
-            <Pressable
-              onPress={() => setShowFilters((v) => !v)}
-              style={styles.filterToggle}
-            >
-              <Text style={styles.filterToggleText}>
-                {showFilters ? 'Hide filters' : 'Filters'}
-                {distanceFilter !== null ? ` · ${distanceFilter} m` : ''}
-              </Text>
-            </Pressable>
+            <View style={styles.filterToggleRow}>
+              <Button
+                label={
+                  showFilters
+                    ? 'Hide filters'
+                    : distanceFilter !== null
+                      ? `Filters · ${distanceFilter} m`
+                      : 'Filters'
+                }
+                variant="text"
+                onPress={() => setShowFilters((v) => !v)}
+              />
+            </View>
 
             {showFilters ? (
-              <View style={styles.filterRow}>
-                <Pressable
+              <View style={styles.chipRow}>
+                <Chip
+                  label="All distances"
+                  selected={distanceFilter === null}
                   onPress={() => setDistanceFilter(null)}
-                  style={[
-                    styles.rangeChip,
-                    distanceFilter === null && styles.rangeChipActive,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.rangeChipText,
-                      distanceFilter === null && styles.rangeChipTextActive,
-                    ]}
-                  >
-                    All distances
-                  </Text>
-                </Pressable>
+                />
                 {distances.map((d) => (
-                  <Pressable
+                  <Chip
                     key={d}
+                    label={`${d} m`}
+                    selected={distanceFilter === d}
                     onPress={() => setDistanceFilter(d)}
-                    style={[
-                      styles.rangeChip,
-                      distanceFilter === d && styles.rangeChipActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.rangeChipText,
-                        distanceFilter === d && styles.rangeChipTextActive,
-                      ]}
-                    >
-                      {d} m
-                    </Text>
-                  </Pressable>
+                  />
                 ))}
               </View>
             ) : null}
@@ -198,7 +167,6 @@ export default function DashboardScreen({ navigation }: Props) {
                     : 'per arrow'
                 }
               />
-              <View style={{ width: spacing.sm }} />
               <StatTile
                 label="Tightest group"
                 value={
@@ -214,19 +182,12 @@ export default function DashboardScreen({ navigation }: Props) {
               />
             </View>
 
-            <View style={styles.tileRow}>
-              <StatTile
-                label="Sessions"
-                value={String(bests.totalSessions)}
-                caption={RANGE_LABELS[range].toLowerCase()}
-              />
-              <View style={{ width: spacing.sm }} />
-              <StatTile
-                label="Arrows"
-                value={String(bests.totalArrows)}
-                caption="marks recorded"
-              />
-            </View>
+            {/* The counting stats don't earn tiles — one quiet line. */}
+            <Text style={[styles.countLine, { color: palette.textMuted }]}>
+              {plural(bests.totalSessions, 'session')} ·{' '}
+              {plural(bests.totalArrows, 'arrow')} ·{' '}
+              {RANGE_LABELS[range].toLowerCase()}
+            </Text>
 
             {/* Two measures, two charts. Never a shared axis. */}
             <TrendChart
@@ -244,14 +205,22 @@ export default function DashboardScreen({ navigation }: Props) {
               lowerIsBetter
             />
 
-            <Text style={styles.sectionTitle}>Sessions</Text>
+            <SectionHeader title="Sessions" />
           </View>
         }
         ListEmptyComponent={
           loading ? null : (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyTitle}>Nothing here yet</Text>
-              <Text style={styles.emptyBody}>
+            <View style={styles.empty}>
+              <Text style={[type.body, { color: palette.textSecondary }]}>
+                Nothing here yet.
+              </Text>
+              <Text
+                style={[
+                  type.label,
+                  styles.emptyBody,
+                  { color: palette.textMuted },
+                ]}
+              >
                 Record a session and it will show up here with its score and
                 grouping.
               </Text>
@@ -261,9 +230,10 @@ export default function DashboardScreen({ navigation }: Props) {
         renderItem={({ item }) => (
           <SessionRow
             summary={item}
-            palette={palette}
             onPress={() =>
-              navigation.navigate('SessionDetail', { sessionId: item.sessionId })
+              navigation.navigate('SessionDetail', {
+                sessionId: item.sessionId,
+              })
             }
           />
         )}
@@ -274,48 +244,41 @@ export default function DashboardScreen({ navigation }: Props) {
 
 function SessionRow({
   summary,
-  palette,
   onPress,
 }: {
   summary: SessionSummary;
-  palette: Palette;
   onPress: () => void;
 }) {
-  const styles = makeStyles(palette);
+  const palette = usePalette();
+
+  const meta = [
+    summary.distanceM !== null ? `${summary.distanceM} m` : null,
+    summary.gearLabel,
+    summary.location,
+    summary.isPendingSync ? 'Not synced' : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
-    <Pressable style={styles.row} onPress={onPress} accessibilityRole="button">
-      <View style={styles.rowMain}>
-        <View style={styles.rowHeader}>
-          <Text style={styles.rowDate}>{formatDate(summary.shotAt)}</Text>
-          {summary.isPendingSync ? (
-            <View style={styles.pendingPill}>
-              <Text style={styles.pendingText}>Not synced</Text>
-            </View>
-          ) : null}
-        </View>
-        <Text style={styles.rowMeta} numberOfLines={1}>
-          {[
-            summary.distanceM !== null ? `${summary.distanceM} m` : null,
-            summary.gearLabel,
-            summary.location,
-          ]
-            .filter(Boolean)
-            .join(' · ') || 'No details'}
-        </Text>
-      </View>
-
-      <View style={styles.rowStats}>
-        <Text style={styles.rowScore}>{summary.totalScore}</Text>
-        <Text style={styles.rowSub}>
-          {summary.arrowCount} arrows
-          {summary.averageScore !== null
-            ? ` · ${summary.averageScore.toFixed(1)} avg`
-            : ''}
-        </Text>
-      </View>
-    </Pressable>
+    <ListRow
+      title={formatDate(summary.shotAt)}
+      subtitle={meta || 'No details'}
+      value={String(summary.totalScore)}
+      valueCaption={
+        plural(summary.arrowCount, 'arrow') +
+        (summary.averageScore !== null
+          ? ` · ${summary.averageScore.toFixed(1)} avg`
+          : '')
+      }
+      dotColor={summary.isPendingSync ? palette.accent : undefined}
+      onPress={onPress}
+    />
   );
+}
+
+function plural(n: number, unit: string): string {
+  return `${n} ${unit}${n === 1 ? '' : 's'}`;
 }
 
 function formatDate(d: Date): string {
@@ -331,106 +294,37 @@ function formatGrouping(v: number): string {
   return `${(v * 100).toFixed(1)}%`;
 }
 
-function makeStyles(palette: Palette) {
-  return StyleSheet.create({
-    screen: { flex: 1, backgroundColor: palette.page },
-    content: { padding: spacing.md, paddingBottom: spacing.xl },
-    titleRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: spacing.md,
-    },
-    screenTitle: {
-      fontSize: 24,
-      fontWeight: '700',
-      color: palette.textPrimary,
-    },
-    newButton: {
-      backgroundColor: palette.series1,
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
-      borderRadius: radius.md,
-    },
-    newButtonText: { color: '#ffffff', fontWeight: '600', fontSize: 14 },
-    rangeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-    rangeChip: {
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
-      borderRadius: radius.md,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: palette.border,
-      backgroundColor: palette.surface,
-    },
-    rangeChipActive: {
-      backgroundColor: palette.textPrimary,
-      borderColor: palette.textPrimary,
-    },
-    rangeChipText: { color: palette.textSecondary, fontSize: 13 },
-    rangeChipTextActive: { color: palette.surface, fontWeight: '600' },
-    filterToggle: { paddingVertical: spacing.sm },
-    filterToggleText: { color: palette.series1, fontSize: 13, fontWeight: '600' },
-    filterRow: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: spacing.sm,
-      marginBottom: spacing.sm,
-    },
-    tileRow: { flexDirection: 'row', marginBottom: spacing.sm },
-    sectionTitle: {
-      fontSize: 16,
-      fontWeight: '700',
-      color: palette.textPrimary,
-      marginTop: spacing.sm,
-      marginBottom: spacing.sm,
-    },
-    row: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: palette.surface,
-      borderRadius: radius.lg,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: palette.border,
-      padding: spacing.md,
-      marginBottom: spacing.sm,
-    },
-    rowMain: { flex: 1, paddingRight: spacing.sm },
-    rowHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-    rowDate: { fontSize: 15, fontWeight: '600', color: palette.textPrimary },
-    rowMeta: { fontSize: 12, color: palette.textSecondary, marginTop: 2 },
-    rowStats: { alignItems: 'flex-end' },
-    rowScore: {
-      fontSize: 20,
-      fontWeight: '700',
-      color: palette.textPrimary,
-      fontVariant: ['tabular-nums'],
-    },
-    rowSub: { fontSize: 11, color: palette.textMuted },
-    pendingPill: {
-      backgroundColor: palette.gridline,
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 2,
-      borderRadius: radius.sm,
-    },
-    pendingText: { fontSize: 10, color: palette.textSecondary },
-    emptyCard: {
-      backgroundColor: palette.surface,
-      borderRadius: radius.lg,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: palette.border,
-      padding: spacing.lg,
-      alignItems: 'center',
-    },
-    emptyTitle: {
-      fontSize: 16,
-      fontWeight: '600',
-      color: palette.textPrimary,
-      marginBottom: spacing.xs,
-    },
-    emptyBody: {
-      fontSize: 13,
-      color: palette.textSecondary,
-      textAlign: 'center',
-    },
-  });
-}
+const styles = StyleSheet.create({
+  screen: { flex: 1 },
+  content: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xl,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.lg,
+  },
+  filterToggleRow: { alignItems: 'flex-start', marginVertical: spacing.xs },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  tileRow: { flexDirection: 'row', gap: spacing.sm },
+  countLine: {
+    ...type.label,
+    fontWeight: '400',
+    marginTop: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  empty: { alignItems: 'center', paddingVertical: spacing.xl },
+  emptyBody: {
+    fontWeight: '400',
+    textAlign: 'center',
+    marginTop: spacing.xs,
+  },
+});

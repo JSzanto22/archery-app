@@ -9,24 +9,23 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import TargetFace, { Mark } from '../components/TargetFace';
+import { Button, Screen } from '../components/ui';
 import { Arrow, Round, Target, collections } from '../db';
 import { addArrow, addRound, attachLocalPhoto, deleteArrow } from '../db/actions';
 import { findPreset } from '../db/presets';
 import { groupSpread, groupSpreadMultiSpot } from '../scoring/grouping';
 import { Zone, maxZoneScore } from '../scoring/scoring';
 import { RootStackParamList } from '../navigation';
-import { Palette, radius, spacing, usePalette } from '../theme';
+import { radius, spacing, type, usePalette } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Marking'>;
 
 export default function MarkingScreen({ navigation, route }: Props) {
   const { sessionId, roundId } = route.params;
   const palette = usePalette();
-  const styles = makeStyles(palette);
 
   const [round, setRound] = useState<Round | null>(null);
   const [target, setTarget] = useState<Target | null>(null);
@@ -127,117 +126,135 @@ export default function MarkingScreen({ navigation, route }: Props) {
 
   if (!round || !target) {
     return (
-      <SafeAreaView style={styles.screen}>
-        <Text style={styles.loading}>Loading…</Text>
-      </SafeAreaView>
+      <Screen>
+        <Text style={[type.body, { color: palette.textSecondary }]}>
+          Loading…
+        </Text>
+      </Screen>
     );
   }
 
   return (
-    <SafeAreaView style={styles.screen} edges={['left', 'right', 'bottom']}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.statRow}>
-          <Stat
-            label="Round score"
-            value={String(total)}
-            caption={
-              arrows.length > 0 ? `of ${arrows.length * best} possible` : '—'
-            }
-            palette={palette}
-          />
-          <Stat
-            label="Arrows"
-            value={String(arrows.length)}
-            caption={`board ${round.roundOrder}`}
-            palette={palette}
-          />
-          <Stat
-            label="Grouping"
-            value={grouping === null ? '—' : `${(grouping * 100).toFixed(1)}%`}
-            caption="of face width"
-            palette={palette}
+    <Screen>
+      {/* Three numbers, no card chrome — the stats speak for themselves. */}
+      <View style={styles.statRow}>
+        <Stat
+          label="Round score"
+          value={String(total)}
+          caption={
+            arrows.length > 0 ? `of ${arrows.length * best} possible` : '—'
+          }
+        />
+        <Stat
+          label="Arrows"
+          value={String(arrows.length)}
+          caption={`board ${round.roundOrder}`}
+        />
+        <Stat
+          label="Grouping"
+          value={grouping === null ? '—' : `${(grouping * 100).toFixed(1)}%`}
+          caption="of face width"
+        />
+      </View>
+
+      <View style={styles.faceWrap}>
+        <TargetFace
+          zones={zones}
+          marks={marks}
+          photoUri={round.localPhotoUri}
+          isPreset={target.type === 'preset'}
+          aspectRatio={aspectRatio}
+          selectedMarkId={selected}
+          onTap={onTap}
+          onMarkPress={(id) => setSelected(id === selected ? null : id)}
+        />
+      </View>
+
+      <Text style={[styles.hint, { color: palette.textMuted }]}>
+        {selected
+          ? 'Tap the highlighted mark again to deselect, or remove it below.'
+          : 'Tap where each arrow landed. Tap a mark to select it.'}
+      </Text>
+
+      {/* Action hierarchy: one filled, one tonal, the rest text. */}
+      <View style={styles.textActions}>
+        <Button
+          label="Undo last"
+          variant="text"
+          disabled={arrows.length === 0}
+          onPress={onUndo}
+        />
+        <Button
+          label={selected ? 'Remove mark' : 'Photo'}
+          variant="text"
+          onPress={selected ? onDeleteSelected : onAddPhoto}
+        />
+      </View>
+
+      <View style={styles.mainActions}>
+        <View style={styles.actionFlex}>
+          <Button label="Next board" variant="tonal" block onPress={onNextRound} />
+        </View>
+        <View style={styles.actionFlex}>
+          <Button
+            label="Finish session"
+            variant="filled"
+            block
+            onPress={() => navigation.replace('SessionDetail', { sessionId })}
           />
         </View>
+      </View>
 
-        <View style={styles.faceWrap}>
-          <TargetFace
-            zones={zones}
-            marks={marks}
-            photoUri={round.localPhotoUri}
-            isPreset={target.type === 'preset'}
-            aspectRatio={aspectRatio}
-            selectedMarkId={selected}
-            onTap={onTap}
-            onMarkPress={(id) => setSelected(id === selected ? null : id)}
-          />
-        </View>
-
-        <Text style={styles.hint}>
-          {selected
-            ? 'Tap the highlighted mark again to deselect, or remove it below.'
-            : 'Tap where each arrow landed. Tap a mark to select it.'}
-        </Text>
-
-        <View style={styles.buttonRow}>
-          <SecondaryButton
-            label="Undo last"
-            onPress={onUndo}
-            disabled={arrows.length === 0}
-            palette={palette}
-          />
-          <SecondaryButton
-            label={selected ? 'Remove mark' : 'Photo'}
-            onPress={selected ? onDeleteSelected : onAddPhoto}
-            palette={palette}
-          />
-        </View>
-
-        <View style={styles.buttonRow}>
-          <SecondaryButton
-            label="Next board"
-            onPress={onNextRound}
-            palette={palette}
-          />
-          <Pressable
-            style={styles.primary}
-            onPress={() =>
-              navigation.replace('SessionDetail', { sessionId })
-            }
-            accessibilityRole="button"
-          >
-            <Text style={styles.primaryText}>Finish session</Text>
-          </Pressable>
-        </View>
-
-        {arrows.length > 0 ? (
-          <View style={styles.scoreList}>
-            <Text style={styles.scoreListTitle}>Marks</Text>
-            <View style={styles.scoreChips}>
-              {arrows.map((a) => (
+      {arrows.length > 0 ? (
+        <View style={styles.scoreList}>
+          <Text style={[type.label, { color: palette.textSecondary }]}>
+            Marks
+          </Text>
+          <View style={styles.scoreChips}>
+            {arrows.map((a) => {
+              const isSelected = a.id === selected;
+              return (
                 <Pressable
                   key={a.id}
-                  onPress={() => setSelected(a.id === selected ? null : a.id)}
+                  onPress={() => setSelected(isSelected ? null : a.id)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isSelected }}
+                  hitSlop={4}
                   style={[
                     styles.scoreChip,
-                    a.id === selected && styles.scoreChipActive,
-                    a.isMiss && styles.scoreChipMiss,
+                    {
+                      backgroundColor: isSelected
+                        ? palette.accentTonal
+                        : palette.surface,
+                      borderColor: isSelected
+                        ? 'transparent'
+                        : a.isMiss
+                          ? palette.critical
+                          : palette.border,
+                    },
                   ]}
                 >
                   <Text
                     style={[
                       styles.scoreChipText,
-                      a.id === selected && styles.scoreChipTextActive,
+                      {
+                        color: isSelected
+                          ? palette.onAccentTonal
+                          : a.isMiss
+                            ? palette.critical
+                            : palette.textPrimary,
+                      },
                     ]}
                   >
                     {a.isMiss ? 'M' : a.scoreValue}
                   </Text>
                 </Pressable>
-              ))}
-            </View>
+              );
+            })}
           </View>
-        ) : null}
-      </ScrollView>
-    </SafeAreaView>
+        </View>
+      ) : null}
+    </Screen>
   );
 }
 
@@ -245,131 +262,82 @@ function Stat({
   label,
   value,
   caption,
-  palette,
 }: {
   label: string;
   value: string;
   caption: string;
-  palette: Palette;
 }) {
-  const styles = makeStyles(palette);
+  const palette = usePalette();
   return (
     <View style={styles.stat}>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statCaption}>{caption}</Text>
+      <Text style={[type.label, { color: palette.textSecondary }]}>
+        {label}
+      </Text>
+      <Text
+        style={[styles.statValue, { color: palette.textPrimary }]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+      >
+        {value}
+      </Text>
+      <Text style={[styles.statCaption, { color: palette.textMuted }]}>
+        {caption}
+      </Text>
     </View>
   );
 }
 
-function SecondaryButton({
-  label,
-  onPress,
-  disabled,
-  palette,
-}: {
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-  palette: Palette;
-}) {
-  const styles = makeStyles(palette);
-  return (
-    <Pressable
-      style={[styles.secondary, disabled && styles.disabled]}
-      onPress={onPress}
-      disabled={disabled}
-      accessibilityRole="button"
-    >
-      <Text style={styles.secondaryText}>{label}</Text>
-    </Pressable>
-  );
-}
-
-function makeStyles(palette: Palette) {
-  return StyleSheet.create({
-    screen: { flex: 1, backgroundColor: palette.page },
-    content: { padding: spacing.md, paddingBottom: spacing.xl },
-    loading: { padding: spacing.lg, color: palette.textSecondary },
-    statRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
-    stat: {
-      flex: 1,
-      backgroundColor: palette.surface,
-      borderRadius: radius.lg,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: palette.border,
-      padding: spacing.sm,
-    },
-    statLabel: { fontSize: 11, color: palette.textSecondary },
-    statValue: {
-      fontSize: 22,
-      fontWeight: '700',
-      color: palette.textPrimary,
-      fontVariant: ['tabular-nums'],
-    },
-    statCaption: { fontSize: 10, color: palette.textMuted },
-    faceWrap: {
-      backgroundColor: palette.surface,
-      borderRadius: radius.lg,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: palette.border,
-      padding: spacing.sm,
-      overflow: 'hidden',
-    },
-    hint: {
-      fontSize: 12,
-      color: palette.textMuted,
-      textAlign: 'center',
-      marginVertical: spacing.sm,
-    },
-    buttonRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
-    secondary: {
-      flex: 1,
-      backgroundColor: palette.surface,
-      borderRadius: radius.md,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: palette.border,
-      paddingVertical: spacing.md,
-      alignItems: 'center',
-    },
-    secondaryText: { color: palette.textPrimary, fontWeight: '600', fontSize: 14 },
-    disabled: { opacity: 0.4 },
-    primary: {
-      flex: 1,
-      backgroundColor: palette.series1,
-      borderRadius: radius.md,
-      paddingVertical: spacing.md,
-      alignItems: 'center',
-    },
-    primaryText: { color: '#ffffff', fontWeight: '700', fontSize: 14 },
-    scoreList: { marginTop: spacing.md },
-    scoreListTitle: {
-      fontSize: 13,
-      fontWeight: '600',
-      color: palette.textSecondary,
-      marginBottom: spacing.sm,
-    },
-    scoreChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-    scoreChip: {
-      minWidth: 38,
-      alignItems: 'center',
-      paddingVertical: spacing.sm,
-      paddingHorizontal: spacing.sm,
-      borderRadius: radius.md,
-      backgroundColor: palette.surface,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: palette.border,
-    },
-    scoreChipActive: {
-      backgroundColor: palette.textPrimary,
-      borderColor: palette.textPrimary,
-    },
-    scoreChipMiss: { borderColor: palette.critical },
-    scoreChipText: {
-      color: palette.textPrimary,
-      fontWeight: '600',
-      fontVariant: ['tabular-nums'],
-    },
-    scoreChipTextActive: { color: palette.surface },
-  });
-}
+const styles = StyleSheet.create({
+  statRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginBottom: spacing.md,
+  },
+  stat: { flex: 1 },
+  statValue: {
+    ...type.display,
+    fontSize: 28,
+    lineHeight: 34,
+    fontVariant: ['tabular-nums'],
+  },
+  statCaption: { ...type.label, fontWeight: '400' },
+  faceWrap: { borderRadius: radius.lg, overflow: 'hidden' },
+  hint: {
+    ...type.label,
+    fontWeight: '400',
+    textAlign: 'center',
+    marginVertical: spacing.sm,
+  },
+  textActions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  mainActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  actionFlex: { flex: 1 },
+  scoreList: { marginTop: spacing.lg },
+  scoreChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  scoreChip: {
+    minWidth: 44,
+    minHeight: 40,
+    borderRadius: radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+  },
+  scoreChipText: {
+    ...type.body,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
+});

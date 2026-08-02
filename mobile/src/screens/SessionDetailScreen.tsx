@@ -1,15 +1,15 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StyleSheet, Text, View } from 'react-native';
 
 import TargetFace from '../components/TargetFace';
+import { Button, Screen, SectionHeader } from '../components/ui';
 import { Round, Session, collections } from '../db';
 import { findPreset } from '../db/presets';
 import { groupSpread, groupSpreadMultiSpot } from '../scoring/grouping';
 import { Zone } from '../scoring/scoring';
 import { RootStackParamList } from '../navigation';
-import { Palette, radius, spacing, usePalette } from '../theme';
+import { radius, spacing, type, usePalette } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SessionDetail'>;
 
@@ -27,7 +27,6 @@ interface RoundView {
 export default function SessionDetailScreen({ navigation, route }: Props) {
   const { sessionId } = route.params;
   const palette = usePalette();
-  const styles = makeStyles(palette);
 
   const [session, setSession] = useState<Session | null>(null);
   const [gearLabel, setGearLabel] = useState<string | null>(null);
@@ -85,9 +84,11 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
 
   if (!session) {
     return (
-      <SafeAreaView style={styles.screen}>
-        <Text style={styles.loading}>Loading…</Text>
-      </SafeAreaView>
+      <Screen>
+        <Text style={[type.body, { color: palette.textSecondary }]}>
+          Loading…
+        </Text>
+      </Screen>
     );
   }
 
@@ -96,172 +97,113 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
   const allPoints = rounds.flatMap((r) => r.marks);
   const overallGrouping = groupSpread(allPoints);
 
+  const meta = [
+    session.distanceM !== null ? `${session.distanceM} m` : null,
+    gearLabel,
+    session.location,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
   return (
-    <SafeAreaView style={styles.screen} edges={['left', 'right', 'bottom']}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.date}>
-          {session.shotAt.toLocaleDateString(undefined, {
-            weekday: 'long',
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric',
-          })}
+    <Screen>
+      <Text style={[type.title, { color: palette.textPrimary }]}>
+        {session.shotAt.toLocaleDateString(undefined, {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        })}
+      </Text>
+      <Text style={[styles.meta, { color: palette.textSecondary }]}>
+        {meta || 'No details recorded'}
+      </Text>
+
+      {session.notes ? (
+        <Text style={[styles.notes, { color: palette.textSecondary }]}>
+          {session.notes}
         </Text>
-        <Text style={styles.meta}>
-          {[
-            session.distanceM !== null ? `${session.distanceM} m` : null,
-            gearLabel,
-            session.location,
-          ]
-            .filter(Boolean)
-            .join(' · ') || 'No details recorded'}
+      ) : null}
+
+      {/* One hero number; the supporting figures stay quiet beside it. */}
+      <View style={styles.heroBlock}>
+        <Text style={[type.label, { color: palette.textSecondary }]}>
+          Total score
         </Text>
+        <Text style={[styles.heroValue, { color: palette.textPrimary }]}>
+          {totalScore}
+        </Text>
+        <Text style={[styles.heroCaption, { color: palette.textMuted }]}>
+          {arrowCount
+            ? `${(totalScore / arrowCount).toFixed(2)} per arrow`
+            : 'no arrows'}
+          {overallGrouping !== null
+            ? ` · ${(overallGrouping * 100).toFixed(1)}% grouping`
+            : ''}
+        </Text>
+      </View>
 
-        {session.notes ? <Text style={styles.notes}>{session.notes}</Text> : null}
-
-        <View style={styles.totalsRow}>
-          <Total label="Total" value={String(totalScore)} palette={palette} />
-          <Total
-            label="Per arrow"
-            value={arrowCount ? (totalScore / arrowCount).toFixed(2) : '—'}
-            palette={palette}
-          />
-          <Total
-            label="Grouping"
-            value={
-              overallGrouping === null
-                ? '—'
-                : `${(overallGrouping * 100).toFixed(1)}%`
-            }
-            palette={palette}
-          />
-        </View>
-
-        {rounds.map((view) => (
-          <View key={view.round.id} style={styles.roundCard}>
-            <View style={styles.roundHeader}>
-              <Text style={styles.roundTitle}>
-                Board {view.round.roundOrder}
-              </Text>
-              <Text style={styles.roundScore}>{view.score}</Text>
-            </View>
-            <Text style={styles.roundMeta}>
-              {view.targetName} · {view.marks.length} arrows
-              {view.grouping !== null
-                ? ` · ${(view.grouping * 100).toFixed(1)}% group`
-                : ''}
-            </Text>
-
-            <View style={styles.faceWrap}>
-              <TargetFace
-                zones={view.zones}
-                marks={view.marks}
-                photoUri={view.round.localPhotoUri}
-                isPreset={view.isPreset}
-                aspectRatio={view.aspectRatio}
+      {rounds.map((view) => (
+        <View key={view.round.id}>
+          <SectionHeader
+            title={`Board ${view.round.roundOrder} · ${view.score}`}
+            trailing={
+              <Button
+                label="Edit marks"
+                variant="text"
+                onPress={() =>
+                  navigation.navigate('Marking', {
+                    sessionId,
+                    roundId: view.round.id,
+                  })
+                }
               />
-            </View>
-
-            <Pressable
-              style={styles.editButton}
-              onPress={() =>
-                navigation.navigate('Marking', {
-                  sessionId,
-                  roundId: view.round.id,
-                })
-              }
-            >
-              <Text style={styles.editButtonText}>Edit marks</Text>
-            </Pressable>
-          </View>
-        ))}
-
-        {rounds.length === 0 ? (
-          <Text style={styles.empty}>
-            This session has no boards yet.
+            }
+          />
+          <Text style={[styles.roundMeta, { color: palette.textMuted }]}>
+            {view.targetName} · {view.marks.length}{' '}
+            {view.marks.length === 1 ? 'arrow' : 'arrows'}
+            {view.grouping !== null
+              ? ` · ${(view.grouping * 100).toFixed(1)}% group`
+              : ''}
           </Text>
-        ) : null}
-      </ScrollView>
-    </SafeAreaView>
+
+          <View style={styles.faceWrap}>
+            <TargetFace
+              zones={view.zones}
+              marks={view.marks}
+              photoUri={view.round.localPhotoUri}
+              isPreset={view.isPreset}
+              aspectRatio={view.aspectRatio}
+            />
+          </View>
+        </View>
+      ))}
+
+      {rounds.length === 0 ? (
+        <Text
+          style={[type.body, styles.empty, { color: palette.textMuted }]}
+        >
+          This session has no boards yet.
+        </Text>
+      ) : null}
+    </Screen>
   );
 }
 
-function Total({
-  label,
-  value,
-  palette,
-}: {
-  label: string;
-  value: string;
-  palette: Palette;
-}) {
-  const styles = makeStyles(palette);
-  return (
-    <View style={styles.total}>
-      <Text style={styles.totalLabel}>{label}</Text>
-      <Text style={styles.totalValue}>{value}</Text>
-    </View>
-  );
-}
-
-function makeStyles(palette: Palette) {
-  return StyleSheet.create({
-    screen: { flex: 1, backgroundColor: palette.page },
-    content: { padding: spacing.md, paddingBottom: spacing.xl },
-    loading: { padding: spacing.lg, color: palette.textSecondary },
-    date: { fontSize: 20, fontWeight: '700', color: palette.textPrimary },
-    meta: { fontSize: 13, color: palette.textSecondary, marginTop: spacing.xs },
-    notes: {
-      fontSize: 13,
-      color: palette.textSecondary,
-      fontStyle: 'italic',
-      marginTop: spacing.sm,
-    },
-    totalsRow: {
-      flexDirection: 'row',
-      gap: spacing.sm,
-      marginTop: spacing.md,
-      marginBottom: spacing.md,
-    },
-    total: {
-      flex: 1,
-      backgroundColor: palette.surface,
-      borderRadius: radius.lg,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: palette.border,
-      padding: spacing.md,
-    },
-    totalLabel: { fontSize: 11, color: palette.textSecondary },
-    totalValue: {
-      fontSize: 22,
-      fontWeight: '700',
-      color: palette.textPrimary,
-      fontVariant: ['tabular-nums'],
-    },
-    roundCard: {
-      backgroundColor: palette.surface,
-      borderRadius: radius.lg,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: palette.border,
-      padding: spacing.md,
-      marginBottom: spacing.md,
-    },
-    roundHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'baseline',
-    },
-    roundTitle: { fontSize: 15, fontWeight: '600', color: palette.textPrimary },
-    roundScore: {
-      fontSize: 18,
-      fontWeight: '700',
-      color: palette.textPrimary,
-      fontVariant: ['tabular-nums'],
-    },
-    roundMeta: { fontSize: 12, color: palette.textMuted, marginBottom: spacing.sm },
-    faceWrap: { overflow: 'hidden', borderRadius: radius.md },
-    editButton: { alignSelf: 'flex-start', paddingVertical: spacing.sm },
-    editButtonText: { color: palette.series1, fontWeight: '600', fontSize: 13 },
-    empty: { color: palette.textMuted, textAlign: 'center' },
-  });
-}
+const styles = StyleSheet.create({
+  meta: { ...type.body, marginTop: spacing.xs },
+  notes: { ...type.body, fontStyle: 'italic', marginTop: spacing.sm },
+  heroBlock: { marginTop: spacing.lg },
+  heroValue: {
+    fontSize: 44,
+    fontWeight: '700',
+    letterSpacing: -1,
+    lineHeight: 50,
+    fontVariant: ['tabular-nums'],
+  },
+  heroCaption: { ...type.label, fontWeight: '400', marginTop: 2 },
+  roundMeta: { ...type.label, fontWeight: '400', marginBottom: spacing.sm },
+  faceWrap: { borderRadius: radius.lg, overflow: 'hidden' },
+  empty: { textAlign: 'center', marginTop: spacing.xl },
+});
