@@ -23,6 +23,43 @@ npm start
 
 `npx expo run:ios` needs macOS. From Windows, build iOS through EAS instead.
 
+## Testing on a real Android phone (EAS cloud build)
+
+No local Android SDK or JDK needed — the dev client is built in Expo's cloud
+and installed once; day-to-day iteration then happens over Wi-Fi.
+
+One-time setup (interactive — run these yourself):
+
+```bash
+npx eas-cli login
+npx eas-cli build --profile development --platform android
+```
+
+The first build prompts to create the EAS project and generate an Android
+keystore — accept the defaults. Free-tier builds queue for ~10–30 minutes.
+When it finishes, open the printed URL (or scan the QR) **on the phone**,
+download the APK, and allow the install.
+
+Daily loop:
+
+```bash
+npm start
+```
+
+Open the installed **Archery Tracker** dev app on the phone — it finds the dev
+server on the same Wi-Fi (or scan the QR from the terminal). JS/TS changes
+arrive by fast refresh; **no rebuild needed**. Rebuild through EAS only when
+native pieces change: a new native dependency, or an `app.json` plugin change.
+
+Troubleshooting:
+
+- Windows Firewall will ask about Node the first time — allow it on private
+  networks (Metro listens on port 8081).
+- Phone can't find the server (AP isolation, hotel Wi-Fi):
+  `npx expo start --dev-client --tunnel`.
+- The backend is a separate concern: when sync is wired up, the phone must use
+  the PC's LAN IP (e.g. `http://192.168.x.x:3000`), never `localhost`.
+
 ```bash
 npm test
 npm run typecheck
