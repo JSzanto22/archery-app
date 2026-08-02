@@ -13,8 +13,12 @@
  *   places instantly (coarse entry stays fast; the drag is the precision
  *   path).
  * - **Tap an existing mark to select it.** Selection shows a halo ring.
+ *   Tapping empty space while a mark is selected deselects it — it does NOT
+ *   place (the Figma/Excalidraw convention; without it, "tap away to
+ *   deselect" spawns an unwanted arrow).
  * - **Drag an existing mark to move it** — same loupe, same live score; the
- *   score is re-resolved on release.
+ *   score is re-resolved on release. The grab keeps its offset, so a mark
+ *   picked up by its edge doesn't teleport under the fingertip.
  * - Deletion is the caller's affair (a selected mark's Remove action).
  *
  * Gestures use react-native-gesture-handler's Pan, which delivers
@@ -90,12 +94,26 @@ interface DragState {
   /** 'new' places a fresh mark; 'move' relocates an existing one. */
   mode: 'new' | 'move';
   markId?: string;
-  /** Normalized position. */
+  /** Normalized AIM position — where the mark will land. */
   x: number;
   y: number;
-  /** Pixel position, for placing the loupe. */
+  /** Aim position in pixels, for placing the loupe. */
   px: number;
   py: number;
+  /**
+   * Where the FINGER first touched, in pixels. `moved` is measured against
+   * this, never against the previous event — per-event deltas of a slow,
+   * careful drag all sit under the tap slop, which mis-classified precise
+   * drags as taps (the mark snapped back on release).
+   */
+  startPx: number;
+  startPy: number;
+  /**
+   * Grab offset (aim minus finger) so a mark picked up by its edge moves
+   * relative to where it was, instead of teleporting under the fingertip.
+   */
+  offsetX: number;
+  offsetY: number;
   moved: boolean;
 }
 
@@ -184,42 +202,59 @@ export default function TargetFace({
           y: grabbed.y,
           px: grabbed.x * w,
           py: grabbed.y * h,
+          startPx: px,
+          startPy: py,
+          offsetX: grabbed.x * w - px,
+          offsetY: grabbed.y * h - py,
           moved: false,
         });
-      } else if (onPlace) {
+      } else if (onPlace || onSelectMark) {
         setDrag({
           mode: 'new',
           x: clamp01(px / w),
           y: clamp01(py / h),
           px,
           py,
+          startPx: px,
+          startPy: py,
+          offsetX: 0,
+          offsetY: 0,
           moved: false,
         });
       }
     },
-    [findMarkAt, onPlace],
+    [findMarkAt, onPlace, onSelectMark],
   );
 
-  const update = useCallback((px: number, py: number) => {
+  const update = useCallback((fingerPx: number, fingerPy: number) => {
     const { w, h } = sizeRef.current;
     const current = dragRef.current;
     if (!w || !h || !current) return;
 
+    // The aim point carries the grab offset; movement is measured finger
+    // against finger-start, cumulatively.
+    const aimPx = fingerPx + current.offsetX;
+    const aimPy = fingerPy + current.offsetY;
+
     setDrag({
       ...current,
-      x: clamp01(px / w),
-      y: clamp01(py / h),
-      px,
-      py,
+      x: clamp01(aimPx / w),
+      y: clamp01(aimPy / h),
+      px: aimPx,
+      py: aimPy,
       moved:
         current.moved ||
-        Math.abs(px - current.px) > TAP_SLOP_PX ||
-        Math.abs(py - current.py) > TAP_SLOP_PX,
+        Math.abs(fingerPx - current.startPx) > TAP_SLOP_PX ||
+        Math.abs(fingerPy - current.startPy) > TAP_SLOP_PX,
     });
   }, []);
 
   const finish = useCallback(() => {
+    // Claim the drag synchronously before committing: if the platform ever
+    // delivers a second end event for one gesture, the second call finds
+    // nothing to commit instead of placing a duplicate arrow.
     const current = dragRef.current;
+    dragRef.current = null;
     setDrag(null);
     if (!current) return;
 
@@ -232,6 +267,14 @@ export default function TargetFace({
           current.markId === selectedMarkId ? null : current.markId!,
         );
       }
+      return;
+    }
+
+    // Tap on empty space while a mark is selected deselects — it does not
+    // place. This is the Figma/Excalidraw convention, and without it the
+    // natural "tap away to deselect" gesture spawns an unwanted arrow.
+    if (!current.moved && selectedMarkId) {
+      onSelectMark?.(null);
       return;
     }
 
