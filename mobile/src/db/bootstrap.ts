@@ -13,6 +13,7 @@ import { PRESET_TARGETS } from './presets';
 import Target from './models/Target';
 import TargetZone from './models/TargetZone';
 
+
 export async function ensurePresetTargets(): Promise<number> {
   const wanted = PRESET_TARGETS.map((p) => p.id);
 
@@ -20,6 +21,22 @@ export async function ensurePresetTargets(): Promise<number> {
     .query(Q.where('id', Q.oneOf(wanted)))
     .fetch();
   const have = new Set(existing.map((t) => t.id));
+
+  // Backfill face widths onto presets created before the column existed —
+  // without this, an install that predates the migration reports grouping as a
+  // bare percentage forever.
+  const needsWidth = existing.filter((t) => t.faceWidthCm == null);
+  if (needsWidth.length > 0) {
+    await database.write(async () => {
+      for (const target of needsWidth) {
+        const preset = PRESET_TARGETS.find((p) => p.id === target.id);
+        if (!preset) continue;
+        await target.update((t: Target) => {
+          t.faceWidthCm = preset.faceWidthCm;
+        });
+      }
+    });
+  }
 
   const missing = PRESET_TARGETS.filter((p) => !have.has(p.id));
   if (missing.length === 0) return 0;
@@ -37,6 +54,7 @@ export async function ensurePresetTargets(): Promise<number> {
         t.type = 'preset';
         t.baseShape = preset.baseShape;
         t.aspectRatio = preset.aspectRatio;
+        t.faceWidthCm = preset.faceWidthCm;
         t.createdAt = new Date(now);
         t.updatedAt = new Date(now);
       });

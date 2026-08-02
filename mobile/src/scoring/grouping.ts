@@ -138,6 +138,88 @@ export function toCentimetres(
   return normalizedDistance * faceWidthCm;
 }
 
+export interface GroupBias {
+  /** Signed offset from the aim point, normalized. Positive x = right. */
+  dx: number;
+  /** Positive y = low (screen coordinates run downward). */
+  dy: number;
+  /** Magnitude of the offset. */
+  distance: number;
+  /** Plain-language direction, e.g. "low left". Null when centred. */
+  direction: string | null;
+}
+
+/**
+ * Where the group sits relative to the aim point.
+ *
+ * The single most actionable number in the app: a tight group in the 7 ring is
+ * good shooting with a bad sight mark, and the fix is a sight adjustment
+ * rather than more practice. Spread says how consistent; this says which way
+ * to move.
+ */
+export function groupBias(
+  points: Point[],
+  aimPoint: Point = { x: 0.5, y: 0.5 },
+  options: GroupingOptions = {},
+): GroupBias | null {
+  const c = centroid(points);
+  if (!c) return null;
+
+  const aspect = options.aspectRatio ?? 1;
+  const dx = c.x - aimPoint.x;
+  const dy = (c.y - aimPoint.y) * aspect;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+
+  return { dx, dy, distance, direction: describeDirection(dx, dy) };
+}
+
+/**
+ * Name a direction, ignoring axes the group is already centred on.
+ *
+ * The 2% dead zone stops the label flickering between "left" and "right" over
+ * a offset too small to correct for.
+ */
+function describeDirection(dx: number, dy: number): string | null {
+  const DEAD_ZONE = 0.02;
+
+  const vertical = Math.abs(dy) < DEAD_ZONE ? '' : dy > 0 ? 'low' : 'high';
+  const horizontal = Math.abs(dx) < DEAD_ZONE ? '' : dx > 0 ? 'right' : 'left';
+
+  const label = [vertical, horizontal].filter(Boolean).join(' ');
+  return label === '' ? null : label;
+}
+
+/** Count of arrows at each score, highest first. Drives the distribution bar. */
+export function scoreDistribution(
+  scores: number[],
+): Array<{ score: number; count: number }> {
+  const counts = new Map<number, number>();
+  for (const score of scores) {
+    counts.set(score, (counts.get(score) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .map(([score, count]) => ({ score, count }))
+    .sort((a, b) => b.score - a.score);
+}
+
+/**
+ * Standard deviation of arrow scores — shot-to-shot consistency.
+ *
+ * Distinct from spread: two archers can average 8 with the same group size,
+ * but the one alternating 10s and 6s has a different problem from the one
+ * shooting 8s all day.
+ */
+export function scoreConsistency(scores: number[]): number | null {
+  if (scores.length < 2) return null;
+
+  const mean = scores.reduce((sum, s) => sum + s, 0) / scores.length;
+  const variance =
+    scores.reduce((sum, s) => sum + (s - mean) ** 2, 0) / scores.length;
+
+  return Math.sqrt(variance);
+}
+
 /**
  * Density grid for the heat map, counting marks per cell.
  *

@@ -9,11 +9,13 @@
 
 import LokiJSAdapter from '@nozbe/watermelondb/adapters/lokijs';
 
+import migrations from './migrations';
 import schema from './schema';
 
 export function createAdapter() {
   return new LokiJSAdapter({
     schema,
+    migrations,
     // A worker would isolate the database from the UI thread, but it also makes
     // debugging a preview build considerably harder for no benefit here.
     useWebWorker: false,

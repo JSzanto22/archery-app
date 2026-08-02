@@ -26,12 +26,14 @@ import { groupSpread, groupSpreadMultiSpot } from '../scoring/grouping';
 import { Zone, maxZoneScore } from '../scoring/scoring';
 import { RootStackParamList } from '../navigation';
 import { radius, spacing, type, usePalette } from '../theme';
+import { formatDistance, useUnits } from '../units';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Marking'>;
 
 export default function MarkingScreen({ navigation, route }: Props) {
   const { sessionId, roundId } = route.params;
   const palette = usePalette();
+  const { units } = useUnits();
 
   const [round, setRound] = useState<Round | null>(null);
   const [target, setTarget] = useState<Target | null>(null);
@@ -65,6 +67,7 @@ export default function MarkingScreen({ navigation, route }: Props) {
 
   const preset = target ? findPreset(target.id) : undefined;
   const aspectRatio = target?.effectiveAspectRatio ?? 1;
+  const faceWidthCm = target?.faceWidthCm ?? preset?.faceWidthCm ?? null;
 
   const marks: Mark[] = arrows.map((a) => ({
     id: a.id,
@@ -180,8 +183,18 @@ export default function MarkingScreen({ navigation, route }: Props) {
         />
         <Stat
           label="Grouping"
-          value={grouping === null ? '—' : `${(grouping * 100).toFixed(1)}%`}
-          caption="of face width"
+          value={
+            grouping === null
+              ? '—'
+              : faceWidthCm
+                ? formatDistance(grouping * faceWidthCm, units)
+                : `${(grouping * 100).toFixed(1)}%`
+          }
+          caption={
+            grouping !== null && faceWidthCm
+              ? `${(grouping * 100).toFixed(1)}% of face`
+              : 'spread from centre'
+          }
         />
       </View>
 

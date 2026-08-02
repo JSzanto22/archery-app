@@ -16,6 +16,7 @@ export default class Target extends Model {
   @field('type') type: 'preset' | 'custom';
   @field('base_shape') baseShape: string | null;
   @field('aspect_ratio') aspectRatio: number | null;
+  @field('face_width_cm') faceWidthCm: number | null;
   @date('created_at') createdAt: Date;
   @date('updated_at') updatedAt: Date;
 

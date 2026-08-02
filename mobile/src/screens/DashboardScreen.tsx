@@ -10,6 +10,7 @@ import {
   SessionSummary,
   personalBests,
 } from '../analytics/dashboard';
+import ScoreDistribution from '../components/ScoreDistribution';
 import TrendChart, { TrendPoint } from '../components/TrendChart';
 import {
   Button,
@@ -22,6 +23,7 @@ import {
 import { useDashboardData } from '../hooks/useDashboardData';
 import { RootStackParamList } from '../navigation';
 import { spacing, type, usePalette } from '../theme';
+import { formatDistance, useUnits } from '../units';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Dashboard'>;
 
@@ -29,6 +31,7 @@ const RANGES: RangeKey[] = ['30d', '90d', '1y', 'all'];
 
 export default function DashboardScreen({ navigation }: Props) {
   const palette = usePalette();
+  const { units, toggle: toggleUnits } = useUnits();
 
   const [range, setRange] = useState<RangeKey>('90d');
   const [showFilters, setShowFilters] = useState(false);
@@ -69,16 +72,39 @@ export default function DashboardScreen({ navigation }: Props) {
     [filtered],
   );
 
+  /**
+   * The grouping trend plots real distance when every session in the range has
+   * a known face size, and falls back to percentage otherwise. Mixing the two
+   * on one axis would put centimetres and percentages on the same scale.
+   */
+  const groupingInCm = useMemo(
+    () =>
+      filtered.length > 0 &&
+      filtered.every((s) => s.grouping === null || s.groupingCm !== null),
+    [filtered],
+  );
+
   const groupingPoints: TrendPoint[] = useMemo(
     () =>
       filtered
         .filter((s) => s.grouping !== null)
         .map((s) => ({
           t: s.shotAt.getTime(),
-          v: s.grouping!,
+          v: groupingInCm ? s.groupingCm! : s.grouping!,
           label: formatDate(s.shotAt),
         })),
-    [filtered],
+    [filtered, groupingInCm],
+  );
+
+  const groupingUnitLabel = groupingInCm
+    ? units === 'metric'
+      ? 'cm'
+      : 'inches'
+    : '% of face';
+
+  const groupingFormatter = useCallback(
+    (v: number) => (groupingInCm ? formatDistance(v, units) : formatPercent(v)),
+    [groupingInCm, units],
   );
 
   const listData = useMemo(
@@ -155,39 +181,83 @@ export default function DashboardScreen({ navigation }: Props) {
 
             <View style={styles.tileRow}>
               <StatTile
-                label="Best average"
+                label="Average arrow"
                 value={
-                  bests.bestAverage?.averageScore
-                    ? bests.bestAverage.averageScore.toFixed(2)
+                  bests.overallAverage !== null
+                    ? bests.overallAverage.toFixed(2)
                     : '—'
                 }
                 caption={
-                  bests.bestAverage
-                    ? formatDate(bests.bestAverage.shotAt)
+                  bests.bestAverage?.averageScore
+                    ? `best ${bests.bestAverage.averageScore.toFixed(2)}`
                     : 'per arrow'
                 }
               />
               <StatTile
                 label="Tightest group"
                 value={
-                  bests.tightestGroup?.grouping
-                    ? formatGrouping(bests.tightestGroup.grouping)
-                    : '—'
+                  // Real distance leads; the percentage is the caption. A
+                  // percentage alone is not comparable between face sizes.
+                  bests.tightestGroup?.groupingCm != null
+                    ? formatDistance(bests.tightestGroup.groupingCm, units)
+                    : bests.tightestGroup?.grouping != null
+                      ? formatPercent(bests.tightestGroup.grouping)
+                      : '—'
                 }
                 caption={
-                  bests.tightestGroup
-                    ? formatDate(bests.tightestGroup.shotAt)
-                    : 'of face width'
+                  bests.tightestGroup?.grouping != null
+                    ? `${formatPercent(bests.tightestGroup.grouping)} of face`
+                    : 'spread from centre'
+                }
+              />
+            </View>
+
+            <View style={styles.tileRow}>
+              <StatTile
+                label={`${bests.distribution[0]?.score ?? 10}s hit`}
+                value={String(bests.totalTopScores)}
+                caption={
+                  bests.totalArrows > 0
+                    ? `${Math.round(
+                        (bests.totalTopScores / bests.totalArrows) * 100,
+                      )}% of arrows`
+                    : 'top ring'
+                }
+              />
+              <StatTile
+                label="Group sits"
+                value={bests.dominantBias ?? 'centred'}
+                caption={
+                  bests.dominantBias
+                    ? 'most sessions — check sight'
+                    : 'no consistent bias'
                 }
               />
             </View>
 
             {/* The counting stats don't earn tiles — one quiet line. */}
-            <Text style={[styles.countLine, { color: palette.textMuted }]}>
-              {plural(bests.totalSessions, 'session')} ·{' '}
-              {plural(bests.totalArrows, 'arrow')} ·{' '}
-              {RANGE_LABELS[range].toLowerCase()}
-            </Text>
+            <View style={styles.countRow}>
+              <Text style={[styles.countLine, { color: palette.textMuted }]}>
+                {plural(bests.totalSessions, 'session')} ·{' '}
+                {plural(bests.totalArrows, 'arrow')} ·{' '}
+                {RANGE_LABELS[range].toLowerCase()}
+              </Text>
+              <Button
+                label={units === 'metric' ? 'cm' : 'inches'}
+                variant="text"
+                onPress={toggleUnits}
+              />
+            </View>
+
+            {bests.distribution.length > 0 ? (
+              <>
+                <SectionHeader title="Where the arrows land" />
+                <ScoreDistribution
+                  distribution={bests.distribution}
+                  maxScore={bests.distribution[0]?.score ?? 10}
+                />
+              </>
+            ) : null}
 
             {/* Two measures, two charts. Never a shared axis. */}
             <TrendChart
@@ -198,10 +268,12 @@ export default function DashboardScreen({ navigation }: Props) {
             />
 
             <TrendChart
-              title="Grouping (smaller is tighter)"
+              title={`Group spread${
+                groupingUnitLabel ? ` (${groupingUnitLabel})` : ''
+              }`}
               points={groupingPoints}
               color={palette.series2}
-              format={formatGrouping}
+              format={groupingFormatter}
               lowerIsBetter
             />
 
@@ -299,8 +371,8 @@ function formatDate(d: Date): string {
   });
 }
 
-/** Grouping is a fraction of face width; percent reads better than 0.0913. */
-function formatGrouping(v: number): string {
+/** A normalized fraction of face width reads better as a percentage. */
+function formatPercent(v: number): string {
   return `${(v * 100).toFixed(1)}%`;
 }
 
@@ -325,12 +397,13 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   tileRow: { flexDirection: 'row', gap: spacing.sm },
-  countLine: {
-    ...type.label,
-    fontWeight: '400',
+  countRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginTop: spacing.sm,
-    marginBottom: spacing.lg,
   },
+  countLine: { ...type.label, fontWeight: '400', flex: 1 },
   empty: { alignItems: 'center', paddingVertical: spacing.xl },
   emptyRingOuter: {
     width: 64,

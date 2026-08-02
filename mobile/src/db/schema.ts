@@ -21,7 +21,8 @@
 import { appSchema, tableSchema } from '@nozbe/watermelondb';
 
 export default appSchema({
-  version: 1,
+  // Bump alongside a migration in ./migrations.ts — never on its own.
+  version: 2,
   tables: [
     tableSchema({
       name: 'gear_profiles',
@@ -44,6 +45,10 @@ export default appSchema({
         // faceWidth / faceHeight. Not in the server schema yet — see the note in
         // backend/db/README.md. Defaults to 1 (square) when unknown.
         { name: 'aspect_ratio', type: 'number', isOptional: true },
+        // Physical width of the face in centimetres. Turns normalized grouping
+        // into a real distance the archer can act on. Editable, because a
+        // printed or home-made face is often not the standard size.
+        { name: 'face_width_cm', type: 'number', isOptional: true },
         { name: 'created_at', type: 'number' },
         { name: 'updated_at', type: 'number' },
       ],

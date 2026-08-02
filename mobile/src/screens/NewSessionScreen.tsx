@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { collections, GearProfile, Target } from '../db';
-import { createSession } from '../db/actions';
+import { createSession, setTargetFaceWidth } from '../db/actions';
 import { Button, Chip, Screen } from '../components/ui';
 import { RootStackParamList } from '../navigation';
 import { radius, spacing, type, usePalette } from '../theme';
@@ -24,7 +24,20 @@ export default function NewSessionScreen({ navigation }: Props) {
   const [customDistance, setCustomDistance] = useState('');
   const [location, setLocation] = useState('');
   const [notes, setNotes] = useState('');
+  const [faceWidth, setFaceWidth] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const selectedTarget = targets.find((t) => t.id === targetId) ?? null;
+
+  // Show the selected face's stored width, so the archer edits a real number
+  // rather than typing into an empty box.
+  useEffect(() => {
+    setFaceWidth(
+      selectedTarget?.faceWidthCm != null
+        ? String(selectedTarget.faceWidthCm)
+        : '',
+    );
+  }, [selectedTarget?.id, selectedTarget?.faceWidthCm]);
 
   useEffect(() => {
     (async () => {
@@ -51,6 +64,19 @@ export default function NewSessionScreen({ navigation }: Props) {
     setSaving(true);
 
     try {
+      // Persist an edited face width before the session starts, so this
+      // session's grouping is reported against the corrected size.
+      const parsedWidth = Number.parseFloat(faceWidth);
+      if (
+        selectedTarget &&
+        faceWidth.trim() !== '' &&
+        Number.isFinite(parsedWidth) &&
+        parsedWidth > 0 &&
+        parsedWidth !== selectedTarget.faceWidthCm
+      ) {
+        await setTargetFaceWidth(selectedTarget, parsedWidth);
+      }
+
       const { session, round } = await createSession({
         shotAt: new Date(),
         distanceM:
@@ -97,6 +123,20 @@ export default function NewSessionScreen({ navigation }: Props) {
           />
         ))}
       </View>
+
+      <FieldLabel text="Face width (cm)" />
+      <TextInput
+        style={inputStyle}
+        placeholder="e.g. 122"
+        placeholderTextColor={palette.textMuted}
+        keyboardType="numeric"
+        value={faceWidth}
+        onChangeText={setFaceWidth}
+      />
+      <Text style={[styles.hint, { color: palette.textMuted }]}>
+        The real diameter of the face you shot. Grouping is reported in
+        centimetres from this — change it if you printed your own.
+      </Text>
 
       <FieldLabel text="Distance" />
       <View style={styles.chipRow}>
@@ -203,5 +243,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   multiline: { minHeight: 96, textAlignVertical: 'top' },
+  hint: { ...type.label, fontWeight: '400', marginTop: spacing.xs },
   submit: { marginTop: spacing.xl },
 });

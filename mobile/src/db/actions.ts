@@ -160,6 +160,25 @@ export async function moveArrow(
   });
 }
 
+/**
+ * Record the physical width of a target face.
+ *
+ * Standard faces have standard sizes, but a printed or home-made one rarely
+ * does, and grouping in centimetres is only as honest as this number. Stored
+ * on the target so every session shot at it benefits.
+ */
+export async function setTargetFaceWidth(
+  target: Target,
+  faceWidthCm: number | null,
+): Promise<void> {
+  await database.write(async () => {
+    await target.update((t: Target) => {
+      t.faceWidthCm = faceWidthCm;
+      t.updatedAt = new Date();
+    });
+  });
+}
+
 /** Attach a locally captured photo. Upload to S3 happens later, on sync. */
 export async function attachLocalPhoto(
   round: Round,

@@ -10,11 +10,13 @@
 
 import SQLiteAdapter from '@nozbe/watermelondb/adapters/sqlite';
 
+import migrations from './migrations';
 import schema from './schema';
 
 export function createAdapter() {
   return new SQLiteAdapter({
     schema,
+    migrations,
     // JSI is the fast synchronous path; without it every query crosses the RN
     // bridge. Requires a dev client or a release build — it is unavailable in
     // Expo Go, which is why this project uses a custom dev client.

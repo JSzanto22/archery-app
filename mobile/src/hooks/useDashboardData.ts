@@ -86,6 +86,11 @@ export function useDashboardData(range: RangeKey): DashboardData {
         roundsBySession.set(round.sessionId, bucket);
       }
 
+      // Face geometry and physical size come from the target record; the
+      // bundled preset table is the fallback for anything not yet stored.
+      const targets = await collections.targets.query().fetch();
+      const targetById = new Map(targets.map((t) => [t.id, t]));
+
       const input: SessionArrows[] = sessions.map((session) => {
         const sessionRounds = roundsBySession.get(session.id) ?? [];
 
@@ -100,9 +105,13 @@ export function useDashboardData(range: RangeKey): DashboardData {
         // Face geometry comes from the first round's target. A session that
         // mixes faces is possible but rare; the aim points only affect grouping,
         // and using the dominant face is better than pretending it is square.
-        const preset = sessionRounds[0]
-          ? findPreset(sessionRounds[0].targetId)
-          : undefined;
+        const targetId = sessionRounds[0]?.targetId;
+        const preset = targetId ? findPreset(targetId) : undefined;
+        const target = targetId ? targetById.get(targetId) : undefined;
+
+        // A stored face width wins: the archer may have measured their own
+        // printed face, and their measurement beats the standard.
+        const faceWidthCm = target?.faceWidthCm ?? preset?.faceWidthCm ?? null;
 
         return {
           sessionId: session.id,
@@ -118,7 +127,13 @@ export function useDashboardData(range: RangeKey): DashboardData {
           isPendingSync: session.isPendingSync,
           arrows: flatArrows,
           aimPoints: preset?.aimPoints ?? [{ x: 0.5, y: 0.5 }],
-          aspectRatio: preset?.aspectRatio ?? 1,
+          aspectRatio: target?.aspectRatio ?? preset?.aspectRatio ?? 1,
+          faceWidthCm,
+          maxArrowScore: Math.max(
+            0,
+            ...flatArrows.map((a) => a.scoreValue),
+            ...(preset ? preset.zones.map((z) => z.scoreValue) : []),
+          ),
         };
       });
 
