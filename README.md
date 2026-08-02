@@ -67,9 +67,34 @@ from `arrows.x/y` + `target_zones` on-device.
 Separate dev / staging / prod stacks: separate Cognito user pools, API Gateway
 stages, RDS instances, and S3 buckets. Debug builds point at dev automatically.
 
+## Running it locally
+
+```bash
+docker compose up -d
+```
+
+Postgres comes up seeded with the World Archery presets and seven months of
+demo shooting. Then:
+
+```bash
+cd backend && npm install && cp .env.example .env && npm run dev
+```
+
+```bash
+cd mobile && npm install && npx expo prebuild && npx expo run:android
+```
+
+Details in each directory's README.
+
 ## Status
 
-| Phase | Scope | State |
-| --- | --- | --- |
-| 1 | Mobile capture, manual marking, sync, dashboard | Not started |
-| 2 | CV arrow detection (on-device, backend fallback) | Not started |
+| Area | State |
+| --- | --- |
+| Postgres schema, presets, seeded demo data, Docker | Done |
+| Scoring and grouping (device) | Done, 26 tests |
+| Mobile: dashboard, new session, marking, session detail | Done |
+| Backend: profile, gear, targets, sessions, arrows, photos, sync | Done, 21 tests |
+| Mobile sync client | Written, not yet run against the server |
+| Auth (Cognito), photo upload, target builder, gear screens | Not started |
+| Infrastructure as code — nothing deploys to AWS yet | Not started |
+| Phase 2: CV arrow detection | Not started |

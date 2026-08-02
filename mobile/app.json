@@ -1,0 +1,53 @@
+{
+  "expo": {
+    "name": "Archery Tracker",
+    "slug": "archery-tracker",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "archerytracker",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.archerytracker.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Photograph the target face so you can mark arrows over the real board."
+      }
+    },
+    "android": {
+      "package": "app.archerytracker.mobile",
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "15.1"
+          },
+          "android": {
+            "minSdkVersion": 24
+          }
+        }
+      ],
+      "@morrowdigital/watermelondb-expo-plugin",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Photograph the target face so you can mark arrows over the real board."
+        }
+      ],
+      "expo-font",
+      "expo-asset"
+    ],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}
