@@ -6,7 +6,7 @@ import DashboardScreen from './screens/DashboardScreen';
 import MarkingScreen from './screens/MarkingScreen';
 import NewSessionScreen from './screens/NewSessionScreen';
 import SessionDetailScreen from './screens/SessionDetailScreen';
-import { usePalette } from './theme';
+import { fonts, usePalette } from './theme';
 
 export type RootStackParamList = {
   Dashboard: undefined;
@@ -26,6 +26,7 @@ export default function Navigation() {
         screenOptions={{
           headerStyle: { backgroundColor: palette.page },
           headerTintColor: palette.textPrimary,
+          headerTitleStyle: { fontFamily: fonts.heading, fontSize: 17 },
           headerShadowVisible: false,
           contentStyle: { backgroundColor: palette.page },
         }}

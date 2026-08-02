@@ -1,15 +1,27 @@
 /**
- * The app's one button, three emphases.
+ * The app's one button, three emphases — with weight.
  *
- * `filled` is the single primary action a screen gets — it wears the accent.
- * `tonal` is the supporting action. `text` is everything else. If a screen
- * seems to need two filled buttons, the screen has two jobs.
+ * `filled` is the single primary action a screen gets: a gold slab with a
+ * darker bottom edge that compresses when pressed, so the button feels like a
+ * physical key rather than a painted rectangle. No animation library — the
+ * press effect is a static style swap (edge shrinks, face drops 2dp).
+ *
+ * `tonal` is the supporting action, same physics in a quieter tint.
+ * `text` is everything else. If a screen seems to need two filled buttons,
+ * the screen has two jobs.
  */
 
 import React from 'react';
-import { Pressable, StyleSheet, Text, ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, Text } from 'react-native';
 
-import { Palette, TOUCH_TARGET, radius, spacing, type, usePalette } from '../../theme';
+import {
+  Palette,
+  TOUCH_TARGET,
+  fonts,
+  radius,
+  spacing,
+  usePalette,
+} from '../../theme';
 
 export type ButtonVariant = 'filled' | 'tonal' | 'text';
 
@@ -22,6 +34,8 @@ interface Props {
   block?: boolean;
 }
 
+const EDGE = 3;
+
 export default function Button({
   label,
   onPress,
@@ -30,8 +44,8 @@ export default function Button({
   block = false,
 }: Props) {
   const palette = usePalette();
-
   const colors = variantColors(variant, palette);
+  const hasEdge = variant !== 'text';
 
   return (
     <Pressable
@@ -42,8 +56,15 @@ export default function Button({
       style={({ pressed }) => [
         styles.base,
         block && styles.block,
-        { backgroundColor: colors.bg },
-        pressed && !disabled && styles.pressed,
+        {
+          backgroundColor: colors.bg,
+          borderBottomColor: colors.edge,
+          borderBottomWidth: hasEdge ? (pressed ? 1 : EDGE) : 0,
+          // The face drops by the edge it lost, so the button's footprint is
+          // stable and nothing below it shifts.
+          marginTop: hasEdge && pressed ? EDGE - 1 : 0,
+        },
+        pressed && variant === 'text' && styles.textPressed,
         disabled && styles.disabled,
       ]}
     >
@@ -57,26 +78,33 @@ export default function Button({
 function variantColors(variant: ButtonVariant, palette: Palette) {
   switch (variant) {
     case 'filled':
-      return { bg: palette.accent, fg: palette.onAccent };
+      return {
+        bg: palette.accent,
+        fg: palette.onAccent,
+        edge: palette.accentEdge,
+      };
     case 'tonal':
-      return { bg: palette.accentTonal, fg: palette.onAccentTonal };
+      return {
+        bg: palette.accentTonal,
+        fg: palette.onAccentTonal,
+        edge: palette.gridline,
+      };
     case 'text':
-      return { bg: 'transparent', fg: palette.accent };
+      return { bg: 'transparent', fg: palette.accentText, edge: 'transparent' };
   }
 }
 
 const styles = StyleSheet.create({
   base: {
     minHeight: TOUCH_TARGET,
-    borderRadius: radius.pill,
+    borderRadius: radius.control,
     paddingHorizontal: spacing.lg,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
   },
-  block: { alignSelf: 'stretch', flex: undefined },
-  label: { ...type.body, fontWeight: '600' },
-  // Feedback is an opacity dip — no animation, no ripple machinery.
-  pressed: { opacity: 0.65 },
+  block: { alignSelf: 'stretch' },
+  label: { fontSize: 15, fontFamily: fonts.heading, letterSpacing: 0.2 },
+  textPressed: { opacity: 0.6 },
   disabled: { opacity: 0.4 },
 });

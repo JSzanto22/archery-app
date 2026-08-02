@@ -211,8 +211,18 @@ export default function DashboardScreen({ navigation }: Props) {
         ListEmptyComponent={
           loading ? null : (
             <View style={styles.empty}>
-              <Text style={[type.body, { color: palette.textSecondary }]}>
-                Nothing here yet.
+              {/* A quiet quote of the target face — the app's motif. */}
+              <View style={[styles.emptyRingOuter, { borderColor: palette.accent }]}>
+                <View
+                  style={[styles.emptyRingInner, { borderColor: palette.gridline }]}
+                >
+                  <View
+                    style={[styles.emptyBull, { backgroundColor: palette.accent }]}
+                  />
+                </View>
+              </View>
+              <Text style={[type.body, styles.emptyTitle, { color: palette.textSecondary }]}>
+                No arrows loosed yet.
               </Text>
               <Text
                 style={[
@@ -221,8 +231,7 @@ export default function DashboardScreen({ navigation }: Props) {
                   { color: palette.textMuted },
                 ]}
               >
-                Record a session and it will show up here with its score and
-                grouping.
+                Record a session and it lands here with its score and grouping.
               </Text>
             </View>
           )
@@ -265,13 +274,14 @@ function SessionRow({
       title={formatDate(summary.shotAt)}
       subtitle={meta || 'No details'}
       value={String(summary.totalScore)}
+      roundel
       valueCaption={
         plural(summary.arrowCount, 'arrow') +
         (summary.averageScore !== null
           ? ` · ${summary.averageScore.toFixed(1)} avg`
           : '')
       }
-      dotColor={summary.isPendingSync ? palette.accent : undefined}
+      dotColor={summary.isPendingSync ? palette.accentText : undefined}
       onPress={onPress}
     />
   );
@@ -322,6 +332,25 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   empty: { alignItems: 'center', paddingVertical: spacing.xl },
+  emptyRingOuter: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  emptyRingInner: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyBull: { width: 14, height: 14, borderRadius: 7 },
+  emptyTitle: { fontWeight: '600' },
   emptyBody: {
     fontWeight: '400',
     textAlign: 'center',

@@ -7,7 +7,8 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { radius, spacing, type, usePalette } from '../../theme';
+import { fonts, radius, spacing, type, usePalette } from '../../theme';
+import Roundel from './Roundel';
 
 interface Props {
   title: string;
@@ -15,6 +16,8 @@ interface Props {
   /** Right-aligned figure — rendered large and tabular. */
   value?: string;
   valueCaption?: string;
+  /** Render the value inside the score roundel instead of as plain text. */
+  roundel?: boolean;
   /** Small leading dot, e.g. pending-sync state. */
   dotColor?: string;
   onPress?: () => void;
@@ -25,6 +28,7 @@ export default function ListRow({
   subtitle,
   value,
   valueCaption,
+  roundel = false,
   dotColor,
   onPress,
 }: Props) {
@@ -64,9 +68,13 @@ export default function ListRow({
 
       {value !== undefined ? (
         <View style={styles.trailing}>
-          <Text style={[styles.value, { color: palette.textPrimary }]}>
-            {value}
-          </Text>
+          {roundel ? (
+            <Roundel value={value} />
+          ) : (
+            <Text style={[styles.value, { color: palette.textPrimary }]}>
+              {value}
+            </Text>
+          )}
           {valueCaption ? (
             <Text style={[styles.valueCaption, { color: palette.textMuted }]}>
               {valueCaption}
@@ -93,12 +101,12 @@ const styles = StyleSheet.create({
   dot: { width: 6, height: 6, borderRadius: 3 },
   title: { ...type.body, fontWeight: '600' },
   subtitle: { ...type.label, fontWeight: '400', marginTop: 2 },
-  trailing: { alignItems: 'flex-end' },
+  trailing: { alignItems: 'center' },
   value: {
     fontSize: 22,
-    fontWeight: '700',
+    fontFamily: fonts.display,
     fontVariant: ['tabular-nums'],
     lineHeight: 26,
   },
-  valueCaption: { ...type.label, fontWeight: '400', marginTop: 1 },
+  valueCaption: { ...type.label, fontWeight: '400', marginTop: 2 },
 });

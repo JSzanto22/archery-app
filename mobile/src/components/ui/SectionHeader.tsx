@@ -5,7 +5,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { spacing, type, usePalette } from '../../theme';
+import { fonts, spacing, usePalette } from '../../theme';
 
 interface Props {
   title: string;
@@ -34,5 +34,5 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
     marginBottom: spacing.sm,
   },
-  title: { ...type.body, fontSize: 16, fontWeight: '700' },
+  title: { fontSize: 16, fontFamily: fonts.heading, lineHeight: 22 },
 });

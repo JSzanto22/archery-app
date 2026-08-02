@@ -197,9 +197,9 @@ const styles = StyleSheet.create({
   heroBlock: { marginTop: spacing.lg },
   heroValue: {
     fontSize: 44,
-    fontWeight: '700',
+    fontFamily: 'SpaceGrotesk_700Bold',
     letterSpacing: -1,
-    lineHeight: 50,
+    lineHeight: 52,
     fontVariant: ['tabular-nums'],
   },
   heroCaption: { ...type.label, fontWeight: '400', marginTop: 2 },

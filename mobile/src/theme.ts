@@ -1,17 +1,19 @@
 /**
- * Design tokens.
+ * Design tokens — "scoreboard gold".
  *
- * The visual language is deliberately small: one accent, four type steps, an
- * 8dp spacing grid, 48dp touch targets, and flat hairline-separated surfaces.
- * Direction and rationale: docs/ui-redesign-direction.md.
+ * The structure stays minimal (four type steps, 8dp grid, 48dp targets); the
+ * personality comes from what archery already owns: the bullseye gold as the
+ * brand accent, a characterful display face (Space Grotesk) for numerals and
+ * headings, tactile pressed-edge buttons, and the concentric-ring roundel as
+ * the score motif. Direction: docs/ui-redesign-direction.md.
  *
- * Chart and chrome colours are the validated data-viz palette; the two series
- * hues passed the palette validator (lightness band, chroma floor, CVD
- * separation, normal-vision floor, contrast) against both surfaces.
+ * Chart series colours are the validated data-viz palette and are NOT the
+ * brand accent: gold is identity and actions; blue/orange remain data, where
+ * they passed the contrast/CVD validator against both surfaces.
  *
- * Target-face colours are a separate matter and deliberately not from that
- * palette: they depict a physical object whose colours are fixed by World
- * Archery. A blue 10 ring would be wrong in the way a green stop sign is wrong.
+ * Target-face colours depict a physical object whose colours are fixed by
+ * World Archery. A restyled 10 ring would be wrong in the way a green stop
+ * sign is wrong.
  */
 
 import { TextStyle, useColorScheme } from 'react-native';
@@ -25,13 +27,21 @@ export interface Palette {
   gridline: string;
   baseline: string;
   border: string;
-  /** The one accent. Primary action per screen, live data, nothing else. */
+  /** Brand gold. Fills: primary action, roundel ring, selection. */
   accent: string;
+  /** Darker gold for the pressed bottom edge of tactile buttons. */
+  accentEdge: string;
+  /** Ink on a gold fill — warm near-black, never white (gold is light). */
   onAccent: string;
-  /** Quiet accent-tinted fill for selected chips and tonal buttons. */
+  /**
+   * Gold as TEXT (links, text buttons). Deliberately darker than `accent`:
+   * raw gold fails contrast as small text on the light surface.
+   */
+  accentText: string;
+  /** Quiet gold-tinted fill for selected chips and tonal buttons. */
   accentTonal: string;
   onAccentTonal: string;
-  /** Score trend. Same hue as accent by design — live data is accent's job. */
+  /** Score trend. Chart data keeps its validated blue — not the brand gold. */
   series1: string;
   /** Grouping trend. Never shares an axis with series1 — separate charts. */
   series2: string;
@@ -40,18 +50,22 @@ export interface Palette {
 }
 
 const light: Palette = {
-  surface: '#fcfcfb',
-  page: '#f9f9f7',
-  textPrimary: '#0b0b0b',
-  textSecondary: '#52514e',
-  textMuted: '#898781',
-  gridline: '#e1e0d9',
-  baseline: '#c3c2b7',
-  border: 'rgba(11,11,11,0.10)',
-  accent: '#2a78d6',
-  onAccent: '#ffffff',
-  accentTonal: '#e7f0fb',
-  onAccentTonal: '#1c5cab',
+  // Warm paper, not clinical white — the light mode should feel like a
+  // scorecard, not a spreadsheet.
+  surface: '#fffdf7',
+  page: '#f7f4ec',
+  textPrimary: '#191713',
+  textSecondary: '#57534a',
+  textMuted: '#8c877b',
+  gridline: '#e6e1d4',
+  baseline: '#c9c3b3',
+  border: 'rgba(25,23,19,0.12)',
+  accent: '#f0b429',
+  accentEdge: '#c68e17',
+  onAccent: '#231a04',
+  accentText: '#8a6100',
+  accentTonal: '#f9ecca',
+  onAccentTonal: '#6e4e00',
   series1: '#2a78d6',
   series2: '#eb6834',
   good: '#006300',
@@ -59,18 +73,20 @@ const light: Palette = {
 };
 
 const dark: Palette = {
-  surface: '#1a1a19',
-  page: '#0d0d0d',
-  textPrimary: '#ffffff',
-  textSecondary: '#c3c2b7',
-  textMuted: '#898781',
-  gridline: '#2c2c2a',
-  baseline: '#383835',
-  border: 'rgba(255,255,255,0.10)',
-  accent: '#3987e5',
-  onAccent: '#ffffff',
-  accentTonal: '#1a2b41',
-  onAccentTonal: '#86b6ef',
+  surface: '#1b1a17',
+  page: '#0e0d0b',
+  textPrimary: '#f7f4ec',
+  textSecondary: '#c6c1b4',
+  textMuted: '#8c877b',
+  gridline: '#2d2b26',
+  baseline: '#3a3831',
+  border: 'rgba(247,244,236,0.12)',
+  accent: '#f0b429',
+  accentEdge: '#b07f12',
+  onAccent: '#231a04',
+  accentText: '#f5c64f',
+  accentTonal: '#332a12',
+  onAccentTonal: '#f0c862',
   series1: '#3987e5',
   series2: '#d95926',
   good: '#0ca30c',
@@ -93,9 +109,11 @@ export const spacing = {
 export const radius = {
   sm: 4,
   md: 12,
+  /** Buttons — chunky, confident corner, deliberately not a pill. */
+  control: 14,
   /** Cards and grouped surfaces. */
   lg: 16,
-  /** Buttons and chips — fully rounded, the Google idiom. */
+  /** Chips and roundels. */
   pill: 999,
 } as const;
 
@@ -103,13 +121,28 @@ export const radius = {
 export const TOUCH_TARGET = 48;
 
 /**
+ * The display face. Loaded in App.tsx via expo-font; headings and hero
+ * numerals wear it, body text stays in the system face for reading comfort.
+ */
+export const fonts = {
+  display: 'SpaceGrotesk_700Bold',
+  heading: 'SpaceGrotesk_600SemiBold',
+  medium: 'SpaceGrotesk_500Medium',
+} as const;
+
+/**
  * The four-step type scale. Nothing renders text outside these steps plus a
  * weight tweak; if a fifth step feels needed, the hierarchy is wrong.
  */
 export const type: Record<'display' | 'title' | 'body' | 'label', TextStyle> = {
   /** Hero numerals. Always pair with fontVariant tabular-nums for figures. */
-  display: { fontSize: 32, fontWeight: '700', letterSpacing: -0.5, lineHeight: 38 },
-  title: { fontSize: 22, fontWeight: '600', lineHeight: 28 },
+  display: {
+    fontSize: 32,
+    fontFamily: fonts.display,
+    letterSpacing: -0.5,
+    lineHeight: 38,
+  },
+  title: { fontSize: 22, fontFamily: fonts.heading, lineHeight: 28 },
   body: { fontSize: 15, fontWeight: '400', lineHeight: 21 },
   label: { fontSize: 12, fontWeight: '500', lineHeight: 16 },
 };

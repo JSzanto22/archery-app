@@ -1,3 +1,9 @@
+import {
+  SpaceGrotesk_500Medium,
+  SpaceGrotesk_600SemiBold,
+  SpaceGrotesk_700Bold,
+  useFonts,
+} from '@expo-google-fonts/space-grotesk';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
@@ -12,6 +18,14 @@ export default function App() {
   const palette = usePalette();
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // The display face. Headings render nothing until it arrives — a flash of
+  // system font would undercut the identity on every cold start.
+  const [fontsLoaded] = useFonts({
+    SpaceGrotesk_500Medium,
+    SpaceGrotesk_600SemiBold,
+    SpaceGrotesk_700Bold,
+  });
 
   useEffect(() => {
     (async () => {
@@ -37,10 +51,10 @@ export default function App() {
     );
   }
 
-  if (!ready) {
+  if (!ready || !fontsLoaded) {
     return (
       <View style={[styles.centre, { backgroundColor: palette.page }]}>
-        <ActivityIndicator color={palette.series1} />
+        <ActivityIndicator color={palette.accent} />
       </View>
     );
   }

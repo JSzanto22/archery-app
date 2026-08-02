@@ -1,5 +1,6 @@
 export { default as Button } from './Button';
 export { default as Chip } from './Chip';
+export { default as Roundel } from './Roundel';
 export { default as ListRow } from './ListRow';
 export { default as Screen } from './Screen';
 export { default as SectionHeader } from './SectionHeader';
