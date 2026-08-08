@@ -207,8 +207,10 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
           name: t.name,
           type: t.type,
           base_shape: t.baseShape,
-          // Not a server column yet — see the gap noted in backend/db/README.md.
-          aspect_ratio: null,
+          // Both are round-tripped now. Sending null here (as this did before
+          // the 0002 migration) wiped the device's face geometry on first pull.
+          aspect_ratio: t.aspectRatio,
+          face_width_cm: t.faceWidthCm,
           created_at: iso(t.createdAt),
           updated_at: iso(t.updatedAt),
         })),
@@ -317,6 +319,8 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
             name: str(raw.name),
             type: 'custom',
             baseShape: nullableStr(raw.base_shape),
+            aspectRatio: nullableNumericString(raw.aspect_ratio),
+            faceWidthCm: nullableNumericString(raw.face_width_cm),
             createdAt: date(raw.created_at),
             updatedAt: date(raw.updated_at),
           })
@@ -325,6 +329,8 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
             set: {
               name: sql`excluded.name`,
               baseShape: sql`excluded.base_shape`,
+              aspectRatio: sql`excluded.aspect_ratio`,
+              faceWidthCm: sql`excluded.face_width_cm`,
               updatedAt: sql`excluded.updated_at`,
             },
             setWhere: sql`${targets.ownerId} = ${userId} AND excluded.updated_at > ${targets.updatedAt}`,
@@ -568,6 +574,19 @@ function str(value: unknown): string {
 function nullableStr(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   return str(value);
+}
+
+/**
+ * Drizzle binds NUMERIC columns as strings, so a JS number has to be converted
+ * rather than passed through. A non-finite or non-positive value is treated as
+ * unknown: a face cannot be 0 cm wide, and storing one would produce a
+ * divide-by-zero in the device's grouping conversion.
+ */
+function nullableNumericString(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const n = typeof value === 'string' ? Number.parseFloat(value) : value;
+  if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0) return null;
+  return String(n);
 }
 
 function num(value: unknown): number {

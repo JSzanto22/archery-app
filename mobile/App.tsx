@@ -10,7 +10,10 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { AuthProvider } from './src/auth/AuthProvider';
+import { config } from './src/config';
 import { collections } from './src/db';
+import { runSync } from './src/db/sync';
 import { ensurePresetTargets } from './src/db/bootstrap';
 import { clearAllSessions, seedDemoData } from './src/db/devSeed';
 import Navigation from './src/navigation';
@@ -45,6 +48,13 @@ export default function App() {
             __seedDemo: seedDemoData,
             __clearSessions: clearAllSessions,
             __collections: collections,
+            // Lets sync be exercised from the console against a local backend,
+            // without needing an account or a tap.
+            __sync: () =>
+              runSync({
+                apiBaseUrl: config.apiBaseUrl,
+                getAccessToken: async () => 'dev',
+              }),
           });
         }
 
@@ -76,10 +86,12 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={styles.fill}>
-      <SafeAreaProvider>
-        <StatusBar style="auto" />
-        <Navigation />
-      </SafeAreaProvider>
+      <AuthProvider>
+        <SafeAreaProvider>
+          <StatusBar style="auto" />
+          <Navigation />
+        </SafeAreaProvider>
+      </AuthProvider>
     </GestureHandlerRootView>
   );
 }

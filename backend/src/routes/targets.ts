@@ -18,6 +18,10 @@ const createBody = z.object({
   id: z.string().uuid(),
   name: z.string().trim().min(1).max(120),
   baseShape: z.enum(['circle', 'rectangle', 'silhouette', 'freeform']).nullable().optional(),
+  /** faceWidth / faceHeight. Rejected at zero — it divides in the client. */
+  aspectRatio: z.number().positive().max(100).nullable().optional(),
+  /** Physical width in centimetres. A face wider than 5 m is a typo. */
+  faceWidthCm: z.number().positive().max(500).nullable().optional(),
   zones: z.array(zoneInput).min(1),
 });
 
@@ -95,13 +99,16 @@ export default async function targetRoutes(app: FastifyInstance): Promise<void> 
       return reply.code(400).send({ error: 'Invalid body', detail: body.error.issues });
     }
 
-    const { zones, ...target } = body.data;
+    const { zones, aspectRatio, faceWidthCm, ...target } = body.data;
 
     const created = await db.transaction(async (tx) => {
       const inserted = await tx
         .insert(targets)
         .values({
           ...target,
+          // NUMERIC columns bind as strings.
+          aspectRatio: aspectRatio == null ? null : String(aspectRatio),
+          faceWidthCm: faceWidthCm == null ? null : String(faceWidthCm),
           ownerId: request.userId,
           // Always 'custom' here. The only way to create a preset is a seed
           // script, because presets are shared by every user.
@@ -129,7 +136,17 @@ export default async function targetRoutes(app: FastifyInstance): Promise<void> 
       return reply.code(400).send({ error: 'Invalid body', detail: body.error.issues });
     }
 
-    const { zones, ...fields } = body.data;
+    const { zones, aspectRatio, faceWidthCm, ...rest } = body.data;
+
+    const fields = {
+      ...rest,
+      ...(aspectRatio === undefined
+        ? {}
+        : { aspectRatio: aspectRatio === null ? null : String(aspectRatio) }),
+      ...(faceWidthCm === undefined
+        ? {}
+        : { faceWidthCm: faceWidthCm === null ? null : String(faceWidthCm) }),
+    };
 
     // eq(ownerId, userId) is what stops a user editing a preset: presets have a
     // NULL owner and never match.

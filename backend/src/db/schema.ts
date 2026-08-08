@@ -63,6 +63,10 @@ export const targets = pgTable(
     name: text('name').notNull(),
     type: text('type').$type<'preset' | 'custom'>().notNull(),
     baseShape: text('base_shape'),
+    /** faceWidth / faceHeight. NULL = unknown; the device assumes square. */
+    aspectRatio: numeric('aspect_ratio', { precision: 6, scale: 4 }),
+    /** Physical width in centimetres. NULL = unknown; grouping stays a ratio. */
+    faceWidthCm: numeric('face_width_cm', { precision: 7, scale: 2 }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

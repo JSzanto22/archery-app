@@ -126,6 +126,57 @@ describe('GET /targets', () => {
     expect(wa122!.zones[9]!.scoreValue).toBe(1);
   });
 
+  it('gives preset zones the deterministic ids the app expects', async () => {
+    // The app ships the same faces so it can score offline. When the two sides
+    // minted different zone ids, the first sync added a second complete set of
+    // rings to every preset face instead of reconciling. The scheme is
+    // <target-suffix8>-0000-4000-8000-<zone index, 12 digits>, mirrored in
+    // mobile/src/db/presets.ts.
+    const res = await app.inject({ method: 'GET', url: `/targets/${WA_122}` });
+    const zones = res.json().zones as Array<{ id: string; zoneIndex: number }>;
+
+    for (const zone of zones) {
+      const expected = `00000101-0000-4000-8000-${String(zone.zoneIndex).padStart(12, '0')}`;
+      expect(zone.id).toBe(expected);
+    }
+  });
+
+  it('has exactly one zone per ring, with no duplicates', async () => {
+    for (const [id, expected] of [
+      [WA_122, 10],
+      ['00000000-0000-4000-8000-000000000103', 6],
+      ['00000000-0000-4000-8000-000000000104', 15],
+    ] as const) {
+      const res = await app.inject({ method: 'GET', url: `/targets/${id}` });
+      const zones = res.json().zones as Array<{ zoneIndex: number }>;
+
+      expect(zones).toHaveLength(expected);
+      expect(new Set(zones.map((z) => z.zoneIndex)).size).toBe(expected);
+    }
+  });
+
+  it('carries the physical dimensions of each preset face', async () => {
+    // Without these the device cannot report grouping in centimetres, and the
+    // 3-spot's vertical correction is wrong by a factor of three.
+    const res = await app.inject({ method: 'GET', url: '/targets' });
+    const body = res.json() as Array<{
+      id: string;
+      aspectRatio: string | null;
+      faceWidthCm: string | null;
+    }>;
+
+    const wa122 = body.find((t) => t.id === WA_122)!;
+    expect(Number(wa122.faceWidthCm)).toBe(122);
+    expect(Number(wa122.aspectRatio)).toBe(1);
+
+    const threeSpot = body.find(
+      (t) => t.id === '00000000-0000-4000-8000-000000000104',
+    )!;
+    expect(Number(threeSpot.faceWidthCm)).toBe(40);
+    // 40 cm wide over 120 cm tall.
+    expect(Number(threeSpot.aspectRatio)).toBeCloseTo(1 / 3, 3);
+  });
+
   it('includes the 3-spot as ellipses, not circles', async () => {
     const res = await app.inject({
       method: 'GET',
@@ -262,6 +313,8 @@ describe('custom targets', () => {
         id: ids.customTarget,
         name: 'Test deer',
         baseShape: 'silhouette',
+        faceWidthCm: 60,
+        aspectRatio: 1.5,
         zones: [
           {
             id: ids.zone,
@@ -277,6 +330,39 @@ describe('custom targets', () => {
     expect(res.statusCode).toBe(201);
     expect(res.json().type).toBe('custom');
     expect(res.json().ownerId).toBe(TEST_USER);
+  });
+
+  it('stores the face dimensions it was given', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/targets/${ids.customTarget}`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(Number(res.json().faceWidthCm)).toBe(60);
+    expect(Number(res.json().aspectRatio)).toBe(1.5);
+  });
+
+  it('rejects a face width of zero', async () => {
+    // Zero would divide by zero converting grouping to centimetres.
+    const res = await app.inject({
+      method: 'POST',
+      url: '/targets',
+      payload: {
+        id: '88888888-8888-4888-8888-000000000001',
+        name: 'Bad face',
+        faceWidthCm: 0,
+        zones: [
+          {
+            id: '88888888-8888-4888-8888-000000000002',
+            zoneIndex: 0,
+            scoreValue: 10,
+            shapeType: 'circle',
+            shapeParams: { cx: 0.5, cy: 0.5, r: 0.1 },
+          },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(400);
   });
 
   it('refuses to let a user edit a shared preset', async () => {
@@ -358,6 +444,28 @@ describe('GET /sync/pull', () => {
     const zone = body.changes.target_zones.created[0];
     expect(typeof zone.shape_params).toBe('string');
     expect(() => JSON.parse(zone.shape_params)).not.toThrow();
+  });
+
+  it('round-trips face geometry instead of nulling it', async () => {
+    // The regression this guards: the serializer used to hardcode
+    // aspect_ratio: null and omit face_width_cm, so the first pull silently
+    // erased both on every device that applied it.
+    const res = await app.inject({ method: 'GET', url: '/sync/pull' });
+    const targetsOut = res.json().changes.targets.created as Array<{
+      id: string;
+      aspect_ratio: string | null;
+      face_width_cm: string | null;
+    }>;
+
+    const wa122 = targetsOut.find((t) => t.id === WA_122)!;
+    expect(wa122.aspect_ratio).not.toBeNull();
+    expect(Number(wa122.face_width_cm)).toBe(122);
+
+    const threeSpot = targetsOut.find(
+      (t) => t.id === '00000000-0000-4000-8000-000000000104',
+    )!;
+    expect(Number(threeSpot.aspect_ratio)).toBeCloseTo(1 / 3, 3);
+    expect(Number(threeSpot.face_width_cm)).toBe(40);
   });
 
   it('excludes rows unchanged since the watermark', async () => {

@@ -8,6 +8,18 @@
 -- the 122 cm face" must resolve to the same row in every environment, and a
 -- round created against dev must still make sense when restored elsewhere.
 --
+-- ZONE ids are fixed too, and for a sharper reason. The app ships these same
+-- presets so a new install can score before it has ever reached the network.
+-- If the two sides mint different zone ids, the first sync does not reconcile
+-- them — it adds a second complete set of rings to every preset face. Both
+-- sides therefore derive a zone id from its target and index:
+--
+--     <target-suffix8>-0000-4000-8000-<zone index, 12 digits>
+--
+-- e.g. the 122 cm face's 10 ring is 00000101-0000-4000-8000-000000000000.
+-- mobile/src/db/presets.ts builds the identical string; change one and you
+-- must change the other.
+--
 -- All geometry is normalized 0-1 to the target face, so a 122 cm face and an
 -- 80 cm face of the same ring count are geometrically identical here — they
 -- differ only in physical size, which lives in the name and in sessions.distance_m.
@@ -34,7 +46,7 @@ INSERT INTO targets (id, owner_id, name, type, base_shape, created_at, updated_a
 
 INSERT INTO target_zones (id, target_id, zone_index, score_value, shape_type, shape_params, created_at, updated_at)
 SELECT
-    gen_random_uuid(),
+    (t.prefix || '-0000-4000-8000-' || lpad(ring.idx::text, 12, '0'))::uuid,
     t.id,
     ring.idx,
     10 - ring.idx,
@@ -47,9 +59,9 @@ SELECT
     now(),
     now()
 FROM (VALUES
-    ('00000000-0000-4000-8000-000000000101'::uuid),
-    ('00000000-0000-4000-8000-000000000102'::uuid)
-) AS t (id)
+    ('00000000-0000-4000-8000-000000000101'::uuid, '00000101'),
+    ('00000000-0000-4000-8000-000000000102'::uuid, '00000102')
+) AS t (id, prefix)
 CROSS JOIN generate_series(0, 9) AS ring (idx);
 
 -- ---------------------------------------------------------------------------
@@ -60,7 +72,7 @@ CROSS JOIN generate_series(0, 9) AS ring (idx);
 
 INSERT INTO target_zones (id, target_id, zone_index, score_value, shape_type, shape_params, created_at, updated_at)
 SELECT
-    gen_random_uuid(),
+    ('00000103-0000-4000-8000-' || lpad(ring.idx::text, 12, '0'))::uuid,
     '00000000-0000-4000-8000-000000000103'::uuid,
     ring.idx,
     10 - ring.idx,
@@ -90,7 +102,8 @@ FROM generate_series(0, 5) AS ring (idx);
 
 INSERT INTO target_zones (id, target_id, zone_index, score_value, shape_type, shape_params, created_at, updated_at)
 SELECT
-    gen_random_uuid(),
+    ('00000104-0000-4000-8000-' ||
+        lpad((ring.idx * 3 + spot.idx)::text, 12, '0'))::uuid,
     '00000000-0000-4000-8000-000000000104'::uuid,
     ring.idx * 3 + spot.idx,
     10 - ring.idx,

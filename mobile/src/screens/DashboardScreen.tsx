@@ -21,8 +21,10 @@ import {
   SegmentedControl,
   StatTile,
 } from '../components/ui';
+import { useAuth } from '../auth/AuthProvider';
 import { seedDemoData } from '../db/devSeed';
 import { useDashboardData } from '../hooks/useDashboardData';
+import { useSync } from '../sync/useSync';
 import { RootStackParamList } from '../navigation';
 import { radius, spacing, type, usePalette } from '../theme';
 import { formatDistance, useUnits } from '../units';
@@ -41,6 +43,13 @@ export default function DashboardScreen({ navigation }: Props) {
 
   const { summaries, groupMap, loading, reload } = useDashboardData(range);
   const [seeding, setSeeding] = useState(false);
+
+  const { getAccessToken, isSignedIn } = useAuth();
+  const sync = useSync({
+    getAccessToken,
+    enabled: isSignedIn,
+    onChanged: reload,
+  });
 
   // Coming back from marking must show the new arrows.
   useFocusEffect(useCallback(() => reload(), [reload]));
@@ -317,6 +326,34 @@ export default function DashboardScreen({ navigation }: Props) {
               />
             </View>
 
+            {/*
+              Sync state, stated plainly. The archer's question is never "did
+              the protocol succeed" — it is "are my arrows safe if I lose this
+              phone", so the copy answers that instead.
+            */}
+            {isSignedIn ? (
+              <View style={styles.syncRow}>
+                <Text
+                  style={[styles.countLine, { color: palette.textMuted }]}
+                  numberOfLines={2}
+                >
+                  {sync.state === 'syncing'
+                    ? 'Backing up…'
+                    : sync.error
+                      ? sync.error
+                      : sync.lastSyncedAt
+                        ? `Backed up ${formatTime(sync.lastSyncedAt)}`
+                        : 'Not backed up yet'}
+                </Text>
+                <Button
+                  label={sync.state === 'syncing' ? 'Syncing…' : 'Back up now'}
+                  variant="text"
+                  disabled={sync.state === 'syncing'}
+                  onPress={() => void sync.sync()}
+                />
+              </View>
+            ) : null}
+
             {bests.distribution.length > 0 ? (
               <>
                 <SectionHeader title="Arrows per ring" />
@@ -450,6 +487,13 @@ function SessionRow({
   );
 }
 
+function formatTime(d: Date): string {
+  return d.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 function plural(n: number, unit: string): string {
   return `${n} ${unit}${n === 1 ? '' : 's'}`;
 }
@@ -511,6 +555,12 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   countLine: { ...type.label, fontWeight: '400', flex: 1 },
+  syncRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
   empty: { alignItems: 'center', paddingVertical: spacing.xl },
   devSeed: { marginBottom: spacing.lg },
   emptyRingOuter: {
