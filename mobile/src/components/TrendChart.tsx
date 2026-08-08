@@ -39,6 +39,12 @@ interface Props {
   format: (v: number) => string;
   /** True when a smaller number is the better one, as with grouping. */
   lowerIsBetter?: boolean;
+  /**
+   * Range the measure can actually take. Axis headroom is clamped to it, so a
+   * chart never labels an impossible value — a group spread of -0.7 cm or an
+   * arrow averaging 10.12 on a ten-ring face both read as broken.
+   */
+  domain?: { min?: number; max?: number };
   height?: number;
 }
 
@@ -53,6 +59,7 @@ export default function TrendChart({
   color,
   format,
   lowerIsBetter = false,
+  domain,
   height = 160,
 }: Props) {
   const palette = usePalette();
@@ -88,6 +95,17 @@ export default function TrendChart({
       max += headroom;
     }
 
+    // Headroom must not invent values the measure cannot take. Without this a
+    // tight group charts a negative spread and a good session charts an
+    // average above the face's top ring.
+    if (domain?.min !== undefined) min = Math.max(min, domain.min);
+    if (domain?.max !== undefined) max = Math.min(max, domain.max);
+
+    // Clamping both ends of a near-flat series can collapse the band again.
+    if (max - min < Number.EPSILON) {
+      max = min + 1;
+    }
+
     const plotW = width - PAD_LEFT - PAD_RIGHT;
     const plotH = height - PAD_TOP - PAD_BOTTOM;
 
@@ -102,7 +120,7 @@ export default function TrendChart({
       min,
       max,
     };
-  }, [height, points, width]);
+  }, [domain?.max, domain?.min, height, points, width]);
 
   const path = useMemo(() => {
     if (!scale) return '';

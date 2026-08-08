@@ -1,27 +1,44 @@
 /**
- * The screen the app exists for: tap the face where each arrow landed.
+ * The screen the app exists for: mark where each arrow landed.
  *
- * Score and grouping update on every tap, computed here on the device from the
- * marks already in local state. Nothing waits on the network — the archer is
- * standing at a target, frequently with no signal.
+ * Score and grouping update on every mark, computed here on the device from
+ * local state. Nothing waits on the network — the archer is standing at a
+ * target, frequently with no signal.
+ *
+ * Three rules govern this screen, all of them learned the hard way:
+ *
+ * 1. **No input is ever dropped.** Writes are serialised through a queue, not
+ *    gated behind a busy flag. Six arrows tapped in quick succession between
+ *    ends must all land; refusing the second tap silently is the worst
+ *    possible failure here, because the archer has no way to notice.
+ * 2. **No failure is ever silent.** Every write and the initial load report
+ *    into the banner. A mark that did not save must not look identical to one
+ *    that did.
+ * 3. **Destructive actions stand alone.** Delete never shares a control with a
+ *    benign action, and is always undoable — cold hands and bright sun make
+ *    mis-taps routine.
  */
 
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import TargetFace, { Mark } from '../components/TargetFace';
-import { Button, Screen } from '../components/ui';
+import { Banner, Button, Screen } from '../components/ui';
 import { Arrow, Round, Target, collections } from '../db';
 import {
+  RestorableArrow,
   addArrow,
   addRound,
   attachLocalPhoto,
   deleteArrow,
   moveArrow,
+  restoreArrow,
+  toRestorable,
 } from '../db/actions';
 import { findPreset } from '../db/presets';
+import { WriteQueue, createWriteQueue } from '../lib/writeQueue';
 import { groupSpread, groupSpreadMultiSpot } from '../scoring/grouping';
 import { Zone, maxZoneScore } from '../scoring/scoring';
 import { RootStackParamList } from '../navigation';
@@ -29,6 +46,11 @@ import { radius, spacing, type, usePalette } from '../theme';
 import { formatDistance, useUnits } from '../units';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Marking'>;
+
+interface UndoOffer {
+  arrow: RestorableArrow;
+  label: string;
+}
 
 export default function MarkingScreen({ navigation, route }: Props) {
   const { sessionId, roundId } = route.params;
@@ -41,24 +63,47 @@ export default function MarkingScreen({ navigation, route }: Props) {
   const [arrows, setArrows] = useState<Arrow[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [writeError, setWriteError] = useState<string | null>(null);
+  const [undoOffer, setUndoOffer] = useState<UndoOffer | null>(null);
+
   /**
-   * Write re-entry guard. A ref, not state: `setBusy(true)` does not take
-   * effect until the next render, so two writes dispatched in the same tick
-   * would both read `busy === false` and both commit — the same stale-read
-   * class of bug as the drag state.
+   * Serialises writes without discarding any. See lib/writeQueue.ts for why a
+   * queue rather than a busy flag.
    */
-  const busyRef = useRef(false);
+  const queueRef = useRef<WriteQueue | null>(null);
+  if (queueRef.current === null) {
+    queueRef.current = createWriteQueue({
+      onError: (message, error) => {
+        console.error('[marking]', message, error);
+        setWriteError(message);
+      },
+    });
+  }
+
+  const enqueue = useCallback(
+    (run: () => Promise<void>, failureMessage: string) =>
+      queueRef.current!.push({ run, failureMessage }),
+    [],
+  );
 
   const load = useCallback(async () => {
-    const loadedRound = await collections.rounds.find(roundId);
-    const loadedTarget = await collections.targets.find(loadedRound.targetId);
-    const loadedZones = await loadedTarget.toScoringZones();
-    const loadedArrows = await loadedRound.orderedArrows.fetch();
+    try {
+      setLoadError(null);
+      const loadedRound = await collections.rounds.find(roundId);
+      const loadedTarget = await collections.targets.find(loadedRound.targetId);
+      const loadedZones = await loadedTarget.toScoringZones();
+      const loadedArrows = await loadedRound.orderedArrows.fetch();
 
-    setRound(loadedRound);
-    setTarget(loadedTarget);
-    setZones(loadedZones);
-    setArrows(loadedArrows);
+      setRound(loadedRound);
+      setTarget(loadedTarget);
+      setZones(loadedZones);
+      setArrows(loadedArrows);
+    } catch (error) {
+      // Without this the screen sits on "Loading…" forever with no way out.
+      console.error('[marking] failed to load end', error);
+      setLoadError("This end could not be opened. It may have been deleted.");
+    }
   }, [roundId]);
 
   useEffect(() => {
@@ -85,88 +130,171 @@ export default function MarkingScreen({ navigation, route }: Props) {
       ? groupSpreadMultiSpot(points, preset.aimPoints, { aspectRatio })
       : groupSpread(points, { aspectRatio });
 
-  const onPlace = async (x: number, y: number) => {
-    if (!round || !target || busyRef.current) return;
-    busyRef.current = true;
-    try {
-      await addArrow(round, target, x, y);
-      await load();
-    } finally {
-      busyRef.current = false;
-    }
-  };
+  const selectedArrow = arrows.find((a) => a.id === selected) ?? null;
 
-  const onMoveMark = async (markId: string, x: number, y: number) => {
-    if (!target || busyRef.current) return;
-    const mark = arrows.find((a) => a.id === markId);
-    if (!mark) return;
+  const onPlace = useCallback(
+    (x: number, y: number) => {
+      if (!round || !target) return;
 
-    busyRef.current = true;
-    try {
-      // Score is re-resolved at the new position inside moveArrow.
-      await moveArrow(mark, target, x, y);
-      await load();
-    } finally {
-      busyRef.current = false;
-    }
-  };
+      setUndoOffer(null);
+      enqueue(async () => {
+        const created = await addArrow(round, target, x, y);
+        // Append rather than refetch the whole end: a full reload per arrow is
+        // what made rapid entry slow enough to need the guard in the first place.
+        setArrows((prev) => [...prev, created]);
+      }, 'That arrow did not save. Tap the face again.');
+    },
+    [enqueue, round, target],
+  );
 
-  const onUndo = async () => {
-    const last = arrows[arrows.length - 1];
-    if (!last) return;
-    await deleteArrow(last);
-    setSelected(null);
-    await load();
-  };
+  const onMoveMark = useCallback(
+    (markId: string, x: number, y: number) => {
+      if (!target) return;
 
-  const onDeleteSelected = async () => {
-    const mark = arrows.find((a) => a.id === selected);
-    if (!mark) return;
-    await deleteArrow(mark);
-    setSelected(null);
-    await load();
-  };
+      enqueue(async () => {
+        const mark = arrows.find((a) => a.id === markId);
+        if (!mark) return;
 
-  const onAddPhoto = async () => {
+        // Score is re-resolved at the new position inside moveArrow.
+        await moveArrow(mark, target, x, y);
+        // The model instance mutated in place; a new array reference is what
+        // tells React the derived marks changed.
+        setArrows((prev) => [...prev]);
+      }, 'That mark could not be moved.');
+    },
+    [arrows, enqueue, target],
+  );
+
+  const removeArrow = useCallback(
+    (mark: Arrow, label: string) => {
+      const restorable = toRestorable(mark);
+
+      enqueue(async () => {
+        await deleteArrow(mark);
+        setArrows((prev) => prev.filter((a) => a.id !== mark.id));
+        setSelected(null);
+        setUndoOffer({ arrow: restorable, label });
+      }, 'That mark could not be removed.');
+    },
+    [enqueue],
+  );
+
+  const onUndoDelete = useCallback(() => {
+    if (!round || !undoOffer) return;
+    const offer = undoOffer;
+    setUndoOffer(null);
+
+    enqueue(async () => {
+      const restored = await restoreArrow(round, offer.arrow);
+      setArrows((prev) =>
+        [...prev, restored].sort(
+          (a, b) => (a.shotOrder ?? 0) - (b.shotOrder ?? 0),
+        ),
+      );
+    }, 'That mark could not be restored.');
+  }, [enqueue, round, undoOffer]);
+
+  const onAddPhoto = useCallback(async () => {
     if (!round) return;
 
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert(
-        'Camera unavailable',
-        'Grant camera access to photograph the target face. You can keep marking by hand without it.',
-      );
-      return;
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        setWriteError(
+          'Camera access is off. You can keep marking by hand without it.',
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
+      if (result.canceled || !result.assets[0]) return;
+
+      // Stored as a local URI only. Upload to S3 happens on sync, and the end
+      // keeps working offline in the meantime.
+      await attachLocalPhoto(round, result.assets[0].uri);
+      setRound(round);
+      setArrows((prev) => [...prev]);
+    } catch (error) {
+      console.error('[marking] photo failed', error);
+      setWriteError('The camera could not be opened.');
     }
+  }, [round]);
 
-    const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
-    if (result.canceled || !result.assets[0]) return;
-
-    // Stored as a local URI only. Upload to S3 happens on sync, and the round
-    // keeps working offline in the meantime.
-    await attachLocalPhoto(round, result.assets[0].uri);
-    await load();
-  };
-
-  const onNextRound = async () => {
+  const onNextEnd = useCallback(async () => {
     if (!round || !target) return;
-    const session = await collections.sessions.find(sessionId);
-    const next = await addRound(session, target.id);
-    navigation.replace('Marking', { sessionId, roundId: next.id });
-  };
+
+    try {
+      const session = await collections.sessions.find(sessionId);
+      const next = await addRound(session, target.id);
+      navigation.replace('Marking', { sessionId, roundId: next.id });
+    } catch (error) {
+      console.error('[marking] failed to start next end', error);
+      setWriteError('A new end could not be started.');
+    }
+  }, [navigation, round, sessionId, target]);
+
+  if (loadError) {
+    return (
+      <Screen>
+        <Banner
+          tone="error"
+          message={loadError}
+          actionLabel="Retry"
+          onAction={load}
+        />
+        <Button
+          label="Back to session"
+          variant="tonal"
+          block
+          onPress={() => navigation.replace('SessionDetail', { sessionId })}
+        />
+      </Screen>
+    );
+  }
 
   if (!round || !target) {
     return (
       <Screen>
-        <Text style={[type.body, { color: palette.textSecondary }]}>
-          Loading…
-        </Text>
+        <View style={styles.statRow}>
+          {[0, 1, 2].map((i) => (
+            <View key={i} style={styles.stat}>
+              <View
+                style={[styles.skelLabel, { backgroundColor: palette.gridline }]}
+              />
+              <View
+                style={[styles.skelValue, { backgroundColor: palette.gridline }]}
+              />
+            </View>
+          ))}
+        </View>
+        <View
+          style={[styles.skelFace, { backgroundColor: palette.gridline }]}
+          accessibilityLabel="Loading end"
+        />
       </Screen>
     );
   }
 
   return (
     <Screen>
+      {writeError ? (
+        <Banner
+          tone="error"
+          message={writeError}
+          onDismiss={() => setWriteError(null)}
+        />
+      ) : null}
+
+      {undoOffer ? (
+        <Banner
+          tone="info"
+          message={undoOffer.label}
+          actionLabel="Undo"
+          onAction={onUndoDelete}
+          onDismiss={() => setUndoOffer(null)}
+        />
+      ) : null}
+
       {/* Three numbers, no card chrome — the stats speak for themselves. */}
       <View style={styles.statRow}>
         <Stat
@@ -212,30 +340,65 @@ export default function MarkingScreen({ navigation, route }: Props) {
         />
       </View>
 
-      <Text style={[styles.hint, { color: palette.textMuted }]}>
-        {selected
-          ? 'Drag the selected mark to move it, or remove it below.'
-          : 'Press and drag to aim — release to place. Tap a mark to select it.'}
-      </Text>
+      {/*
+        The selection toolbar is the ONLY place delete appears. It replaces
+        nothing — the standing actions below keep their labels and meanings at
+        all times, so reaching for "Photo" can never destroy an arrow.
+      */}
+      {selectedArrow ? (
+        <View
+          style={[
+            styles.selectionBar,
+            { borderColor: palette.accent, backgroundColor: palette.surface },
+          ]}
+        >
+          <Text style={[styles.selectionText, { color: palette.textPrimary }]}>
+            Arrow {selectedArrow.shotOrder ?? '—'} ·{' '}
+            {selectedArrow.isMiss ? 'miss' : selectedArrow.scoreValue}
+          </Text>
+          <View style={styles.selectionActions}>
+            <Button
+              label="Deselect"
+              variant="text"
+              onPress={() => setSelected(null)}
+            />
+            <Button
+              label="Delete"
+              variant="tonal"
+              onPress={() =>
+                removeArrow(
+                  selectedArrow,
+                  `Arrow ${selectedArrow.shotOrder ?? ''} removed.`.replace(
+                    '  ',
+                    ' ',
+                  ),
+                )
+              }
+            />
+          </View>
+        </View>
+      ) : (
+        <Text style={[styles.hint, { color: palette.textMuted }]}>
+          Press and drag to aim — release to place. Tap a mark to select it.
+        </Text>
+      )}
 
-      {/* Action hierarchy: one filled, one tonal, the rest text. */}
       <View style={styles.textActions}>
         <Button
           label="Undo last"
           variant="text"
           disabled={arrows.length === 0}
-          onPress={onUndo}
+          onPress={() => {
+            const last = arrows[arrows.length - 1];
+            if (last) removeArrow(last, 'Last arrow removed.');
+          }}
         />
-        <Button
-          label={selected ? 'Remove mark' : 'Photo'}
-          variant="text"
-          onPress={selected ? onDeleteSelected : onAddPhoto}
-        />
+        <Button label="Photo" variant="text" onPress={onAddPhoto} />
       </View>
 
       <View style={styles.mainActions}>
         <View style={styles.actionFlex}>
-          <Button label="Next end" variant="tonal" block onPress={onNextRound} />
+          <Button label="Next end" variant="tonal" block onPress={onNextEnd} />
         </View>
         <View style={styles.actionFlex}>
           <Button
@@ -260,8 +423,10 @@ export default function MarkingScreen({ navigation, route }: Props) {
                   key={a.id}
                   onPress={() => setSelected(isSelected ? null : a.id)}
                   accessibilityRole="button"
+                  accessibilityLabel={`Arrow ${a.shotOrder ?? ''}, ${
+                    a.isMiss ? 'miss' : a.scoreValue
+                  }`}
                   accessibilityState={{ selected: isSelected }}
-                  hitSlop={4}
                   style={[
                     styles.scoreChip,
                     {
@@ -269,7 +434,7 @@ export default function MarkingScreen({ navigation, route }: Props) {
                         ? palette.accentTonal
                         : palette.surface,
                       borderColor: isSelected
-                        ? 'transparent'
+                        ? palette.accent
                         : a.isMiss
                           ? palette.critical
                           : palette.border,
@@ -349,7 +514,21 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     textAlign: 'center',
     marginVertical: spacing.sm,
+    minHeight: 48,
+    paddingTop: spacing.md,
   },
+  selectionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1.5,
+    borderRadius: radius.md,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.xs,
+    marginVertical: spacing.sm,
+  },
+  selectionText: { ...type.body, fontWeight: '600' },
+  selectionActions: { flexDirection: 'row', alignItems: 'center' },
   textActions: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -369,10 +548,11 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   scoreChip: {
-    minWidth: 44,
-    minHeight: 40,
+    // 48dp: the minimum that survives gloves and cold hands.
+    minWidth: 48,
+    minHeight: 48,
     borderRadius: radius.pill,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.sm,
@@ -382,4 +562,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontVariant: ['tabular-nums'],
   },
+  skelLabel: { height: 10, width: '60%', borderRadius: radius.sm },
+  skelValue: {
+    height: 28,
+    width: '80%',
+    borderRadius: radius.sm,
+    marginTop: spacing.xs,
+  },
+  skelFace: { width: '100%', aspectRatio: 1, borderRadius: radius.lg },
 });

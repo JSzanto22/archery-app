@@ -10,6 +10,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { collections } from './src/db';
 import { ensurePresetTargets } from './src/db/bootstrap';
 import { clearAllSessions, seedDemoData } from './src/db/devSeed';
 import Navigation from './src/navigation';
@@ -43,6 +44,7 @@ export default function App() {
           Object.assign(globalThis, {
             __seedDemo: seedDemoData,
             __clearSessions: clearAllSessions,
+            __collections: collections,
           });
         }
 

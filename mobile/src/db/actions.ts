@@ -140,6 +140,50 @@ export async function deleteArrow(arrow: Arrow): Promise<void> {
   });
 }
 
+/** A removed mark, held long enough to put it back. */
+export interface RestorableArrow {
+  x: number;
+  y: number;
+  scoreValue: number;
+  shotOrder: number | null;
+}
+
+export function toRestorable(arrow: Arrow): RestorableArrow {
+  return {
+    x: arrow.x,
+    y: arrow.y,
+    scoreValue: arrow.scoreValue,
+    shotOrder: arrow.shotOrder,
+  };
+}
+
+/**
+ * Put back a mark that was just removed.
+ *
+ * Recreates rather than resurrects: the deleted row carries a tombstone the
+ * next sync must still deliver, so undoing it as a new record keeps both
+ * devices consistent. The original score and shot order are restored verbatim
+ * rather than recomputed — undo should return exactly what was there, not a
+ * fresh interpretation of it.
+ */
+export async function restoreArrow(
+  round: Round,
+  arrow: RestorableArrow,
+): Promise<Arrow> {
+  return database.write(async () => {
+    const now = new Date();
+    return collections.arrows.create((a: Arrow) => {
+      a.roundId = round.id;
+      a.x = arrow.x;
+      a.y = arrow.y;
+      a.scoreValue = arrow.scoreValue;
+      a.shotOrder = arrow.shotOrder;
+      a.createdAt = now;
+      a.updatedAt = now;
+    });
+  });
+}
+
 /** Move an existing mark, re-resolving its score at the new position. */
 export async function moveArrow(
   arrow: Arrow,

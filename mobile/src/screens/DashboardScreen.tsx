@@ -73,6 +73,12 @@ export default function DashboardScreen({ navigation }: Props) {
 
   const bests = useMemo(() => personalBests(filtered), [filtered]);
 
+  /** Highest score any arrow in range could have earned. */
+  const topRingScore = useMemo(
+    () => filtered.reduce((best, s) => Math.max(best, s.maxArrowScore), 10),
+    [filtered],
+  );
+
   const scorePoints: TrendPoint[] = useMemo(
     () =>
       filtered
@@ -328,6 +334,9 @@ export default function DashboardScreen({ navigation }: Props) {
               points={scorePoints}
               color={palette.series1}
               format={(v) => v.toFixed(2)}
+              // Top ring of the face actually shot — 10 on a WA face, 12 on a
+              // 3D animal. Never assume 10.
+              domain={{ min: 0, max: topRingScore }}
             />
 
             <TrendChart
@@ -338,6 +347,8 @@ export default function DashboardScreen({ navigation }: Props) {
               color={palette.series2}
               format={groupingFormatter}
               lowerIsBetter
+              // A spread cannot be negative.
+              domain={{ min: 0 }}
             />
 
             <SectionHeader title="Sessions" />
