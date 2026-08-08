@@ -349,7 +349,10 @@ export default function MarkingScreen({ navigation, route }: Props) {
         <View
           style={[
             styles.selectionBar,
-            { borderColor: palette.accent, backgroundColor: palette.surface },
+            {
+              borderColor: palette.accentBorder,
+              backgroundColor: palette.surface,
+            },
           ]}
         >
           <Text style={[styles.selectionText, { color: palette.textPrimary }]}>
@@ -434,7 +437,7 @@ export default function MarkingScreen({ navigation, route }: Props) {
                         ? palette.accentTonal
                         : palette.surface,
                       borderColor: isSelected
-                        ? palette.accent
+                        ? palette.accentBorder
                         : a.isMiss
                           ? palette.critical
                           : palette.border,

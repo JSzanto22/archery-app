@@ -370,7 +370,12 @@ export default function DashboardScreen({ navigation }: Props) {
                 </View>
               ) : null}
               {/* A quiet quote of the target face — the app's motif. */}
-              <View style={[styles.emptyRingOuter, { borderColor: palette.accent }]}>
+              <View
+                style={[
+                  styles.emptyRingOuter,
+                  { borderColor: palette.accentBorder },
+                ]}
+              >
                 <View
                   style={[styles.emptyRingInner, { borderColor: palette.gridline }]}
                 >

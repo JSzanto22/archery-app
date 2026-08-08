@@ -29,7 +29,7 @@ export default function Roundel({ value, size = 52 }: Props) {
           height: size,
           borderRadius: size / 2,
           borderWidth: ring,
-          borderColor: palette.accent,
+          borderColor: palette.accentBorder,
           backgroundColor: palette.surface,
         },
       ]}

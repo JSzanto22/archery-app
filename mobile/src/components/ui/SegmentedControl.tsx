@@ -73,7 +73,8 @@ const styles = StyleSheet.create({
   },
   segment: {
     flex: 1,
-    minHeight: TOUCH_TARGET - 6,
+    // Full 48dp inside the 3dp container padding.
+    minHeight: TOUCH_TARGET,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',

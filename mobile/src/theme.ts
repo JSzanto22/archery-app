@@ -31,6 +31,13 @@ export interface Palette {
   accent: string;
   /** Darker gold for the pressed bottom edge of tactile buttons. */
   accentEdge: string;
+  /**
+   * Gold for borders and rings that carry meaning (selection, the loupe, the
+   * roundel). Raw `accent` is only 1.8:1 on the light surface — invisible in
+   * the bright sunlight this app is used in. This step clears the 3:1
+   * non-text minimum while still reading as gold.
+   */
+  accentBorder: string;
   /** Ink on a gold fill — warm near-black, never white (gold is light). */
   onAccent: string;
   /**
@@ -56,12 +63,15 @@ const light: Palette = {
   page: '#f7f4ec',
   textPrimary: '#191713',
   textSecondary: '#57534a',
-  textMuted: '#8c877b',
+  // 4.9:1 on the page, 5.3:1 on the surface. The previous #8c877b measured
+  // 3.3:1 and sat on every caption in the app.
+  textMuted: '#6f6a5e',
   gridline: '#e6e1d4',
   baseline: '#c9c3b3',
   border: 'rgba(25,23,19,0.12)',
   accent: '#f0b429',
   accentEdge: '#c68e17',
+  accentBorder: '#b2851e',
   onAccent: '#231a04',
   accentText: '#8a6100',
   accentTonal: '#f9ecca',
@@ -69,7 +79,9 @@ const light: Palette = {
   series1: '#2a78d6',
   series2: '#eb6834',
   good: '#006300',
-  critical: '#d03b3b',
+  // 4.5:1 against the page, which is the harsher of the two light backgrounds
+  // — #d03b3b cleared the surface but not the page.
+  critical: '#cc3a3a',
 };
 
 const dark: Palette = {
@@ -83,6 +95,8 @@ const dark: Palette = {
   border: 'rgba(247,244,236,0.12)',
   accent: '#f0b429',
   accentEdge: '#b07f12',
+  // Gold already clears 9:1 on the dark surface; no separate step needed.
+  accentBorder: '#f0b429',
   onAccent: '#231a04',
   accentText: '#f5c64f',
   accentTonal: '#332a12',
@@ -90,8 +104,12 @@ const dark: Palette = {
   series1: '#3987e5',
   series2: '#d95926',
   good: '#0ca30c',
-  critical: '#d03b3b',
+  // Lightened from #d03b3b, which measured 3.6:1 against the dark surface.
+  critical: '#d85a5a',
 };
+
+/** Both palettes, so contrast can be asserted in tests rather than reviewed. */
+export const PALETTES = { light, dark } as const;
 
 export function usePalette(): Palette {
   return useColorScheme() === 'dark' ? dark : light;

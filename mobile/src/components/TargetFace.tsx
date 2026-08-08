@@ -407,7 +407,7 @@ export default function TargetFace({
             style={[
               styles.loupe,
               {
-                borderColor: palette.accent,
+                borderColor: palette.accentBorder,
                 backgroundColor: palette.surface,
               },
             ]}

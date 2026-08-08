@@ -6,7 +6,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 
-import { radius, spacing, type, usePalette } from '../../theme';
+import { TOUCH_TARGET, radius, spacing, type, usePalette } from '../../theme';
 
 interface Props {
   label: string;
@@ -22,8 +22,6 @@ export default function Chip({ label, selected, onPress }: Props) {
       onPress={onPress}
       accessibilityRole="button"
       accessibilityState={{ selected }}
-      // The visual chip is 40dp; the pressable area reaches the 48dp target.
-      hitSlop={4}
       style={({ pressed }) => [
         styles.base,
         {
@@ -51,7 +49,11 @@ export default function Chip({ label, selected, onPress }: Props) {
 
 const styles = StyleSheet.create({
   base: {
-    minHeight: 40,
+    // A real 48dp target, not 40dp plus hitSlop. hitSlop extends the touch
+    // area but not the visual one, so with gloves the archer aims at a
+    // control that looks smaller than it is and misses the neighbouring gap.
+    minHeight: TOUCH_TARGET,
+    minWidth: TOUCH_TARGET,
     borderRadius: radius.pill,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: spacing.md,
