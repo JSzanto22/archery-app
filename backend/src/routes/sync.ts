@@ -400,8 +400,8 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
             name: str(raw.name),
             type: 'custom' as const,
             baseShape: nullableStr(raw.base_shape),
-            aspectRatio: nullableNumericString(raw.aspect_ratio),
-            faceWidthCm: nullableNumericString(raw.face_width_cm),
+            aspectRatio: nullablePositiveNumber(raw.aspect_ratio),
+            faceWidthCm: nullablePositiveNumber(raw.face_width_cm),
             createdAt: date(raw.created_at),
             updatedAt: date(raw.updated_at),
           })),
@@ -466,7 +466,7 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
           distanceM:
             raw.distance_m === null || raw.distance_m === undefined
               ? null
-              : String(raw.distance_m),
+              : num(raw.distance_m),
           gearProfileId: nullableStr(raw.gear_profile_id),
           equipmentTag: nullableStr(raw.equipment_tag),
           location: nullableStr(raw.location),
@@ -539,8 +539,8 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
           .map((raw) => ({
             id: str(raw.id),
             roundId: str(raw.round_id),
-            x: String(raw.x),
-            y: String(raw.y),
+            x: num(raw.x),
+            y: num(raw.y),
             scoreValue: num(raw.score_value),
             shotOrder:
               raw.shot_order === null || raw.shot_order === undefined
@@ -667,16 +667,17 @@ function nullableStr(value: unknown): string | null {
 }
 
 /**
- * Drizzle binds NUMERIC columns as strings, so a JS number has to be converted
- * rather than passed through. A non-finite or non-positive value is treated as
- * unknown: a face cannot be 0 cm wide, and storing one would produce a
- * divide-by-zero in the device's grouping conversion.
+ * A positive dimension from the wire, or null when it is unusable.
+ *
+ * Non-finite and non-positive values are treated as unknown rather than
+ * stored: a face cannot be 0 cm wide, and storing one would divide by zero in
+ * the device's grouping conversion.
  */
-function nullableNumericString(value: unknown): string | null {
+function nullablePositiveNumber(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   const n = typeof value === 'string' ? Number.parseFloat(value) : value;
   if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0) return null;
-  return String(n);
+  return n;
 }
 
 function num(value: unknown): number {

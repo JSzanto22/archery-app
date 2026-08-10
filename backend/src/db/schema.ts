@@ -64,9 +64,17 @@ export const targets = pgTable(
     type: text('type').$type<'preset' | 'custom'>().notNull(),
     baseShape: text('base_shape'),
     /** faceWidth / faceHeight. NULL = unknown; the device assumes square. */
-    aspectRatio: numeric('aspect_ratio', { precision: 6, scale: 4 }),
+    aspectRatio: numeric('aspect_ratio', {
+      precision: 6,
+      scale: 4,
+      mode: 'number',
+    }),
     /** Physical width in centimetres. NULL = unknown; grouping stays a ratio. */
-    faceWidthCm: numeric('face_width_cm', { precision: 7, scale: 2 }),
+    faceWidthCm: numeric('face_width_cm', {
+      precision: 7,
+      scale: 2,
+      mode: 'number',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -103,10 +111,24 @@ export const sessions = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     shotAt: timestamp('shot_at', { withTimezone: true }).notNull(),
-    // numeric comes back as a string from pg: Postgres NUMERIC exceeds the
-    // precision of a JS number, so the driver refuses to lose data silently.
-    // Parsed at the edges rather than pretending it is a number here.
-    distanceM: numeric('distance_m', { precision: 6, scale: 2 }),
+    /*
+     * `mode: 'number'` on every NUMERIC column.
+     *
+     * Postgres NUMERIC can exceed the precision of a JS number, so the driver
+     * returns strings by default and Drizzle follows suit. Every numeric here
+     * is bounded well inside a double — a distance in metres, a coordinate in
+     * 0..1, a face width in centimetres — so the safety is buying nothing and
+     * costing a string/number mismatch at every call site and across the wire.
+     *
+     * This replaces a global pg type parser that coerced OID 1700 for the
+     * whole process: same effect, but declared per column where it can be
+     * checked against the column's actual range.
+     */
+    distanceM: numeric('distance_m', {
+      precision: 6,
+      scale: 2,
+      mode: 'number',
+    }),
     gearProfileId: uuid('gear_profile_id').references(() => gearProfiles.id, {
       onDelete: 'set null',
     }),
@@ -154,8 +176,8 @@ export const arrows = pgTable(
     roundId: uuid('round_id')
       .notNull()
       .references(() => rounds.id, { onDelete: 'cascade' }),
-    x: numeric('x', { precision: 9, scale: 6 }).notNull(),
-    y: numeric('y', { precision: 9, scale: 6 }).notNull(),
+    x: numeric('x', { precision: 9, scale: 6, mode: 'number' }).notNull(),
+    y: numeric('y', { precision: 9, scale: 6, mode: 'number' }).notNull(),
     /** Resolved on the device at mark time. Never computed here. */
     scoreValue: integer('score_value').notNull(),
     shotOrder: integer('shot_order'),

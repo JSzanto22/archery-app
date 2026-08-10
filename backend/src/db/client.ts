@@ -19,14 +19,12 @@ import pg from 'pg';
 import { env } from '../env.js';
 import * as schema from './schema.js';
 
-const { Pool, types } = pg;
+const { Pool } = pg;
 
-// NUMERIC arrives as a string by default because Postgres numerics can exceed
-// JS number precision. Arrow coordinates are NUMERIC(9,6) and distances
-// NUMERIC(6,2) — both comfortably inside a double — so parsing them here is
-// safe and saves every call site from remembering to do it.
-const PG_NUMERIC_OID = 1700;
-types.setTypeParser(PG_NUMERIC_OID, (value) => Number.parseFloat(value));
+// NUMERIC-to-number conversion is declared per column in schema.ts via
+// `mode: 'number'`, rather than by overriding the driver's parser for OID 1700
+// process-wide. Same effect where it is wanted, and no effect on a column that
+// later needs full NUMERIC precision.
 
 export const pool = new Pool({
   connectionString: env.DATABASE_URL,

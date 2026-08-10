@@ -16,6 +16,7 @@ import { Q } from '@nozbe/watermelondb';
 
 import { collections, database } from '../db';
 import Round from '../db/models/Round';
+import { UPLOAD_TIMEOUT_MS, fetchWithTimeout } from '../lib/http';
 
 export interface PhotoUploadOptions {
   apiBaseUrl: string;
@@ -95,7 +96,7 @@ async function uploadOne(
   const localUri = round.localPhotoUri;
   if (!localUri) return;
 
-  const presignResponse = await fetch(
+  const presignResponse = await fetchWithTimeout(
     `${apiBaseUrl}/rounds/${round.id}/photo-url`,
     {
       method: 'POST',
@@ -126,11 +127,14 @@ async function uploadOne(
   const fileResponse = await fetch(localUri);
   const blob = await fileResponse.blob();
 
-  const putResponse = await fetch(uploadUrl, {
+  const putResponse = await fetchWithTimeout(uploadUrl, {
     method: 'PUT',
     body: blob,
     // Must match the Content-Type the URL was signed with, or S3 rejects it.
     headers: { 'Content-Type': 'image/jpeg' },
+    // A photo is a real payload over the same poor connection, so it gets
+    // longer than an API call before being abandoned.
+    timeoutMs: UPLOAD_TIMEOUT_MS,
   });
 
   if (!putResponse.ok) {
@@ -168,7 +172,7 @@ export async function resolvePhotoUri(
     const token = await options.getAccessToken();
     if (token === null) return null;
 
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `${options.apiBaseUrl}/rounds/${round.id}/photo-url`,
       { headers: { Authorization: `Bearer ${token}` } },
     );

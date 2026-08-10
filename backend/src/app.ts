@@ -1,4 +1,6 @@
 import cors from '@fastify/cors';
+import helmet from '@fastify/helmet';
+import rateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 
 import { env } from './env.js';
@@ -22,7 +24,48 @@ export async function buildApp(): Promise<FastifyInstance> {
     bodyLimit: 8 * 1024 * 1024,
   });
 
-  await app.register(cors, { origin: true });
+  await app.register(helmet, {
+    // The API serves JSON to a native app, never HTML to a browser, so the
+    // script-oriented CSP directives have nothing to protect and only risk
+    // breaking a future docs route.
+    contentSecurityPolicy: false,
+  });
+
+  /*
+   * CORS.
+   *
+   * A React Native app sends no Origin header, so it is unaffected either way;
+   * this is entirely about what a browser is allowed to do with a user's
+   * token. `origin: true` reflected whatever asked, which meant any site could
+   * call the API from a victim's browser. Development keeps that latitude for
+   * the Expo web preview; production is an explicit allowlist, empty by
+   * default.
+   */
+  const allowedOrigins = env.CORS_ALLOWED_ORIGINS?.split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+
+  await app.register(cors, {
+    origin: env.NODE_ENV === 'production' ? (allowedOrigins ?? false) : true,
+  });
+
+  /*
+   * Rate limiting.
+   *
+   * Keyed on the authenticated user where there is one, falling back to IP —
+   * behind API Gateway every request arrives from a small set of addresses, so
+   * an IP-only limit would have one heavy syncer throttle everyone else.
+   *
+   * The ceiling is generous because the expensive endpoint is /sync/push,
+   * which a device calls a handful of times a day, not per interaction.
+   */
+  await app.register(rateLimit, {
+    max: 300,
+    timeWindow: '1 minute',
+    keyGenerator: (request) => request.userId ?? request.ip,
+    // A health check that can be rate-limited cannot report health.
+    allowList: (request) => request.url === '/health',
+  });
 
   // Unauthenticated by design: a health check that needs a token cannot tell a
   // load balancer whether the service is up.

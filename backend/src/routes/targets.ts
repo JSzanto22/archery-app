@@ -106,9 +106,8 @@ export default async function targetRoutes(app: FastifyInstance): Promise<void> 
         .insert(targets)
         .values({
           ...target,
-          // NUMERIC columns bind as strings.
-          aspectRatio: aspectRatio == null ? null : String(aspectRatio),
-          faceWidthCm: faceWidthCm == null ? null : String(faceWidthCm),
+          aspectRatio: aspectRatio ?? null,
+          faceWidthCm: faceWidthCm ?? null,
           ownerId: request.userId,
           // Always 'custom' here. The only way to create a preset is a seed
           // script, because presets are shared by every user.
@@ -140,12 +139,8 @@ export default async function targetRoutes(app: FastifyInstance): Promise<void> 
 
     const fields = {
       ...rest,
-      ...(aspectRatio === undefined
-        ? {}
-        : { aspectRatio: aspectRatio === null ? null : String(aspectRatio) }),
-      ...(faceWidthCm === undefined
-        ? {}
-        : { faceWidthCm: faceWidthCm === null ? null : String(faceWidthCm) }),
+      ...(aspectRatio === undefined ? {} : { aspectRatio }),
+      ...(faceWidthCm === undefined ? {} : { faceWidthCm }),
     };
 
     // eq(ownerId, userId) is what stops a user editing a preset: presets have a

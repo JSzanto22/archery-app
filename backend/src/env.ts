@@ -32,6 +32,12 @@ const schema = z
     S3_ENDPOINT: z.string().url().optional(),
     S3_ACCESS_KEY: z.string().optional(),
     S3_SECRET_KEY: z.string().optional(),
+
+    /**
+     * Comma-separated browser origins allowed to call the API in production.
+     * Unset means none, which is correct for a native-only client.
+     */
+    CORS_ALLOWED_ORIGINS: z.string().optional(),
   })
   .superRefine((env, ctx) => {
     const isProduction = env.NODE_ENV === 'production';

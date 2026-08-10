@@ -55,7 +55,7 @@ export default async function sessionRoutes(app: FastifyInstance): Promise<void>
     const filters = [eq(sessions.ownerId, request.userId)];
     if (from) filters.push(gte(sessions.shotAt, from));
     if (to) filters.push(lte(sessions.shotAt, to));
-    if (distance !== undefined) filters.push(eq(sessions.distanceM, String(distance)));
+    if (distance !== undefined) filters.push(eq(sessions.distanceM, distance));
     if (gearId) filters.push(eq(sessions.gearProfileId, gearId));
 
     return db
@@ -137,7 +137,7 @@ export default async function sessionRoutes(app: FastifyInstance): Promise<void>
         .insert(sessions)
         .values({
           ...session,
-          distanceM: distanceM === null || distanceM === undefined ? null : String(distanceM),
+          distanceM: distanceM ?? null,
           ownerId: request.userId,
           syncStatus: 'synced',
         })
@@ -163,8 +163,8 @@ export default async function sessionRoutes(app: FastifyInstance): Promise<void>
         (r.arrows ?? []).map((a) => ({
           id: a.id,
           roundId: r.id,
-          x: String(a.x),
-          y: String(a.y),
+          x: a.x,
+          y: a.y,
           scoreValue: a.scoreValue,
           shotOrder: a.shotOrder ?? null,
         })),
@@ -211,9 +211,7 @@ export default async function sessionRoutes(app: FastifyInstance): Promise<void>
       .update(sessions)
       .set({
         ...fields,
-        ...(distanceM === undefined
-          ? {}
-          : { distanceM: distanceM === null ? null : String(distanceM) }),
+        ...(distanceM === undefined ? {} : { distanceM }),
         updatedAt: new Date(),
       })
       .where(
@@ -306,8 +304,8 @@ export default async function sessionRoutes(app: FastifyInstance): Promise<void>
           body.data.arrows.map((a) => ({
             id: a.id,
             roundId: params.data.id,
-            x: String(a.x),
-            y: String(a.y),
+            x: a.x,
+            y: a.y,
             scoreValue: a.scoreValue,
             shotOrder: a.shotOrder ?? null,
           })),

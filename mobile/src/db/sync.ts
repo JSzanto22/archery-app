@@ -40,6 +40,7 @@ import {
   SyncPullResult,
 } from '@nozbe/watermelondb/sync';
 
+import { fetchWithTimeout } from '../lib/http';
 import { database } from './index';
 
 export interface SyncOptions {
@@ -123,7 +124,7 @@ export async function runSync(options: SyncOptions): Promise<void> {
   const authorizedFetch = async (path: string, init: RequestInit = {}) => {
     const token = await getAccessToken();
 
-    const response = await fetch(`${apiBaseUrl}${path}`, {
+    const response = await fetchWithTimeout(`${apiBaseUrl}${path}`, {
       ...init,
       headers: {
         'Content-Type': 'application/json',
