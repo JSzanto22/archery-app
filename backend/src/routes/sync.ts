@@ -286,6 +286,84 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
         ...get(table).updated,
       ];
 
+      /*
+       * Deletions run BEFORE the upserts, children first.
+       *
+       * Deleting an arrow and shooting another reuses the freed shot number —
+       * correct for the archer, since the replacement really is the second
+       * arrow. But the deleted row still occupies (round_id, shot_order) until
+       * its tombstone is applied, so upserting first hits the unique index,
+       * the whole transaction rolls back, and the archer's sync fails with
+       * nothing to show for it.
+       *
+       * The ordering costs nothing: a record cannot be in both `deleted` and
+       * `updated` in one push, so nothing that is about to be written is being
+       * removed here.
+       */
+      const ownedSessionsForDelete = await ownedIds(
+        tx,
+        sessions.id,
+        sessions,
+        eq(sessions.ownerId, userId),
+      );
+
+      const ownedRoundsForDelete = ownedSessionsForDelete.size
+        ? await ownedIds(
+            tx,
+            rounds.id,
+            rounds,
+            inArray(rounds.sessionId, [...ownedSessionsForDelete]),
+          )
+        : new Set<string>();
+
+      await deleteOwned(
+        tx,
+        arrows,
+        get('arrows').deleted,
+        ownedRoundsForDelete,
+        'roundId',
+      );
+      await deleteOwned(
+        tx,
+        rounds,
+        get('rounds').deleted,
+        ownedSessionsForDelete,
+        'sessionId',
+      );
+
+      if (get('sessions').deleted.length) {
+        await tx
+          .delete(sessions)
+          .where(
+            and(
+              inArray(sessions.id, get('sessions').deleted),
+              eq(sessions.ownerId, userId),
+            ),
+          );
+      }
+
+      if (get('gear_profiles').deleted.length) {
+        await tx
+          .delete(gearProfiles)
+          .where(
+            and(
+              inArray(gearProfiles.id, get('gear_profiles').deleted),
+              eq(gearProfiles.ownerId, userId),
+            ),
+          );
+      }
+
+      if (get('targets').deleted.length) {
+        await tx
+          .delete(targets)
+          .where(
+            and(
+              inArray(targets.id, get('targets').deleted),
+              eq(targets.ownerId, userId),
+            ),
+          );
+      }
+
       await upsertMany(
         tx,
         gearProfiles,
@@ -481,43 +559,6 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
         },
         sql`excluded.updated_at > ${arrows.updatedAt}`,
       );
-
-      // Deletions, children first so cascades never surprise anyone.
-      await deleteOwned(tx, arrows, get('arrows').deleted, ownedRoundIds, 'roundId');
-      await deleteOwned(tx, rounds, get('rounds').deleted, ownedSessionIds, 'sessionId');
-
-      if (get('sessions').deleted.length) {
-        await tx
-          .delete(sessions)
-          .where(
-            and(
-              inArray(sessions.id, get('sessions').deleted),
-              eq(sessions.ownerId, userId),
-            ),
-          );
-      }
-
-      if (get('gear_profiles').deleted.length) {
-        await tx
-          .delete(gearProfiles)
-          .where(
-            and(
-              inArray(gearProfiles.id, get('gear_profiles').deleted),
-              eq(gearProfiles.ownerId, userId),
-            ),
-          );
-      }
-
-      if (get('targets').deleted.length) {
-        await tx
-          .delete(targets)
-          .where(
-            and(
-              inArray(targets.id, get('targets').deleted),
-              eq(targets.ownerId, userId),
-            ),
-          );
-      }
     });
 
     return { ok: true };

@@ -56,6 +56,8 @@
     "setupFiles": [
       "<rootDir>/jest.setup.js"
     ],
+    "//": "forceExit: the in-memory LokiJS adapter used by the db tests keeps a handle open with no public close(), so the worker never exits on its own. Every suite still runs to completion first; without this the run hangs after reporting its results.",
+    "forceExit": true,
     "transformIgnorePatterns": [
       "node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|@nozbe/watermelondb))"
     ]

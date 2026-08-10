@@ -602,6 +602,80 @@ describe('POST /sync/push', () => {
     expect(check.json().location).toBe('Newer wins');
   });
 
+  it('accepts an arrow that reuses a deleted arrow\'s shot number', async () => {
+    // The archer deletes the second arrow of an end and shoots another. The
+    // replacement really is the second arrow, so the client reuses shot_order
+    // 2 — but the deleted row still holds (round_id, shot_order) until its
+    // tombstone is applied. Upserting before deleting hit the unique index and
+    // rolled the entire sync back.
+    const sessionId = '99999999-9999-4999-8999-000000000001';
+    const roundId = '99999999-9999-4999-8999-000000000002';
+    const firstArrow = '99999999-9999-4999-8999-000000000003';
+    const replacement = '99999999-9999-4999-8999-000000000004';
+    const at = '2026-07-30T10:00:00.000Z';
+
+    const seeded = await app.inject({
+      method: 'POST',
+      url: '/sessions',
+      payload: {
+        id: sessionId,
+        shotAt: at,
+        rounds: [
+          {
+            id: roundId,
+            targetId: WA_122,
+            roundOrder: 1,
+            arrows: [
+              { id: firstArrow, x: 0.5, y: 0.5, scoreValue: 10, shotOrder: 2 },
+            ],
+          },
+        ],
+      },
+    });
+    expect(seeded.statusCode).toBe(201);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/sync/push',
+      payload: {
+        changes: {
+          arrows: {
+            created: [
+              {
+                id: replacement,
+                round_id: roundId,
+                x: 0.48,
+                y: 0.52,
+                score_value: 9,
+                // The same position the deleted arrow occupies.
+                shot_order: 2,
+                created_at: at,
+                updated_at: at,
+              },
+            ],
+            updated: [],
+            deleted: [firstArrow],
+          },
+        },
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    const check = await app.inject({
+      method: 'GET',
+      url: `/sessions/${sessionId}`,
+    });
+    const remaining = check.json().rounds[0].arrows as Array<{
+      id: string;
+      shotOrder: number;
+    }>;
+
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]!.id).toBe(replacement);
+    expect(remaining[0]!.shotOrder).toBe(2);
+  });
+
   it('ignores a push aimed at another user\'s session', async () => {
     const res = await app.inject({
       method: 'POST',
