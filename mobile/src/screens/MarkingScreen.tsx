@@ -22,7 +22,7 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import TargetFace, { Mark } from '../components/TargetFace';
 import { Banner, Button, Screen } from '../components/ui';
@@ -53,9 +53,20 @@ interface UndoOffer {
 }
 
 export default function MarkingScreen({ navigation, route }: Props) {
-  const { sessionId, roundId } = route.params;
+  const { sessionId } = route.params;
   const palette = usePalette();
   const { units } = useUnits();
+
+  /**
+   * Which end is open, held in state rather than the route.
+   *
+   * Ends used to be reachable only forwards, via a `replace` to a new route,
+   * so noticing a mis-marked arrow in end 2 while shooting end 5 meant
+   * finishing the session and coming back in through the detail screen.
+   * Switching in place also keeps the loaded session and target.
+   */
+  const [roundId, setRoundId] = useState(route.params.roundId);
+  const [sessionRounds, setSessionRounds] = useState<Round[]>([]);
 
   const [round, setRound] = useState<Round | null>(null);
   const [target, setTarget] = useState<Target | null>(null);
@@ -95,16 +106,20 @@ export default function MarkingScreen({ navigation, route }: Props) {
       const loadedZones = await loadedTarget.toScoringZones();
       const loadedArrows = await loadedRound.orderedArrows.fetch();
 
+      const session = await collections.sessions.find(sessionId);
+      const allRounds = await session.orderedRounds.fetch();
+
       setRound(loadedRound);
       setTarget(loadedTarget);
       setZones(loadedZones);
       setArrows(loadedArrows);
+      setSessionRounds(allRounds);
     } catch (error) {
       // Without this the screen sits on "Loading…" forever with no way out.
       console.error('[marking] failed to load end', error);
-      setLoadError("This end could not be opened. It may have been deleted.");
+      setLoadError('This end could not be opened. It may have been deleted.');
     }
-  }, [roundId]);
+  }, [roundId, sessionId]);
 
   useEffect(() => {
     load();
@@ -220,18 +235,34 @@ export default function MarkingScreen({ navigation, route }: Props) {
     }
   }, [round]);
 
+  /** Switch to an existing end. Queued writes finish against the end they were aimed at. */
+  const openEnd = useCallback(
+    async (nextRoundId: string) => {
+      if (nextRoundId === roundId) return;
+      await queueRef.current!.drain();
+      setSelected(null);
+      setUndoOffer(null);
+      setRoundId(nextRoundId);
+    },
+    [roundId],
+  );
+
   const onNextEnd = useCallback(async () => {
     if (!round || !target) return;
 
     try {
+      // Any in-flight arrow belongs to the end being left; let it land first.
+      await queueRef.current!.drain();
       const session = await collections.sessions.find(sessionId);
       const next = await addRound(session, target.id);
-      navigation.replace('Marking', { sessionId, roundId: next.id });
+      setSelected(null);
+      setUndoOffer(null);
+      setRoundId(next.id);
     } catch (error) {
       console.error('[marking] failed to start next end', error);
       setWriteError('A new end could not be started.');
     }
-  }, [navigation, round, sessionId, target]);
+  }, [round, sessionId, target]);
 
   if (loadError) {
     return (
@@ -293,6 +324,56 @@ export default function MarkingScreen({ navigation, route }: Props) {
           onAction={onUndoDelete}
           onDismiss={() => setUndoOffer(null)}
         />
+      ) : null}
+
+      {/*
+        Every end in the session, always reachable. An archer who spots a
+        mis-marked arrow three ends ago should not have to finish the session
+        to correct it.
+      */}
+      {sessionRounds.length > 1 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.endStrip}
+        >
+          {sessionRounds.map((r) => {
+            const isCurrent = r.id === roundId;
+            return (
+              <Pressable
+                key={r.id}
+                onPress={() => void openEnd(r.id)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: isCurrent }}
+                accessibilityLabel={`End ${r.roundOrder}`}
+                style={[
+                  styles.endChip,
+                  {
+                    backgroundColor: isCurrent
+                      ? palette.accentTonal
+                      : palette.surface,
+                    borderColor: isCurrent
+                      ? palette.accentBorder
+                      : palette.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.endChipText,
+                    {
+                      color: isCurrent
+                        ? palette.onAccentTonal
+                        : palette.textSecondary,
+                    },
+                  ]}
+                >
+                  {r.roundOrder}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
       ) : null}
 
       {/* Three numbers, no card chrome — the stats speak for themselves. */}
@@ -498,6 +579,21 @@ function Stat({
 }
 
 const styles = StyleSheet.create({
+  endStrip: { gap: spacing.sm, paddingBottom: spacing.md, paddingRight: spacing.md },
+  endChip: {
+    minWidth: 48,
+    minHeight: 48,
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+  },
+  endChipText: {
+    ...type.body,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+  },
   statRow: {
     flexDirection: 'row',
     gap: spacing.md,

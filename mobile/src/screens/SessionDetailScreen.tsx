@@ -3,8 +3,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import TargetFace from '../components/TargetFace';
-import { Button, Screen, SectionHeader } from '../components/ui';
+import { Banner, Button, Screen, SectionHeader } from '../components/ui';
 import { Round, Session, collections } from '../db';
+import { deleteSession } from '../db/actions';
 import { findPreset } from '../db/presets';
 import { groupSpread, groupSpreadMultiSpot } from '../scoring/grouping';
 import { Zone } from '../scoring/scoring';
@@ -31,6 +32,23 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
   const [session, setSession] = useState<Session | null>(null);
   const [gearLabel, setGearLabel] = useState<string | null>(null);
   const [rounds, setRounds] = useState<RoundView[]>([]);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const onDelete = useCallback(async () => {
+    if (!session || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteSession(session);
+      navigation.replace('Dashboard');
+    } catch (e) {
+      console.error('[session] delete failed', e);
+      setError('This session could not be deleted.');
+      setDeleting(false);
+      setConfirmingDelete(false);
+    }
+  }, [deleting, navigation, session]);
 
   const load = useCallback(async () => {
     const loaded = await collections.sessions.find(sessionId);
@@ -107,6 +125,10 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
 
   return (
     <Screen>
+      {error ? (
+        <Banner tone="error" message={error} onDismiss={() => setError(null)} />
+      ) : null}
+
       <Text style={[type.title, { color: palette.textPrimary }]}>
         {session.shotAt.toLocaleDateString(undefined, {
           weekday: 'long',
@@ -185,6 +207,30 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
           This session has no ends yet.
         </Text>
       ) : null}
+
+      {/*
+        Delete lives at the bottom, behind a two-step confirm, and states the
+        cost in arrows rather than asking "are you sure?" — an inline confirm
+        rather than a modal, for the same reason the marking screen avoids
+        Alert.
+      */}
+      <View style={styles.dangerZone}>
+        {confirmingDelete ? (
+          <Banner
+            tone="error"
+            message={`Delete this session and its ${plural(arrowCount, 'arrow')}? This cannot be undone.`}
+            actionLabel={deleting ? 'Deleting…' : 'Delete'}
+            onAction={onDelete}
+            onDismiss={() => setConfirmingDelete(false)}
+          />
+        ) : (
+          <Button
+            label="Delete session"
+            variant="text"
+            onPress={() => setConfirmingDelete(true)}
+          />
+        )}
+      </View>
     </Screen>
   );
 }
@@ -204,4 +250,9 @@ const styles = StyleSheet.create({
   roundMeta: { ...type.label, fontWeight: '400', marginBottom: spacing.sm },
   faceWrap: { borderRadius: radius.lg, overflow: 'hidden' },
   empty: { textAlign: 'center', marginTop: spacing.xl },
+  dangerZone: { marginTop: spacing.xl, alignItems: 'flex-start' },
 });
+
+function plural(n: number, unit: string): string {
+  return `${n} ${unit}${n === 1 ? '' : 's'}`;
+}
