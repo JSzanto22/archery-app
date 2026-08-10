@@ -16,6 +16,7 @@ import { AppState } from 'react-native';
 
 import { config } from '../config';
 import { runSync } from '../db/sync';
+import { uploadPendingPhotos } from './photoUpload';
 
 export type SyncState = 'idle' | 'syncing' | 'error';
 
@@ -67,6 +68,25 @@ export function useSync({
         apiBaseUrl: config.apiBaseUrl,
         getAccessToken: async () => token,
       });
+
+      // Photos after the rows, so a round always exists server-side before a
+      // key is attached to it. Failures here are logged per photo and do not
+      // fail the sync — the session data is already safe, and an unsent photo
+      // is retried next time.
+      const photos = await uploadPendingPhotos({
+        apiBaseUrl: config.apiBaseUrl,
+        getAccessToken: async () => token,
+      });
+
+      // The key written by a successful upload is itself a local change; push
+      // it so other devices can see the photo.
+      if (photos.uploaded > 0) {
+        await runSync({
+          apiBaseUrl: config.apiBaseUrl,
+          getAccessToken: async () => token,
+        });
+      }
+
       setLastSyncedAt(new Date());
       setState('idle');
       onChangedRef.current?.();

@@ -23,6 +23,15 @@ const schema = z
     S3_BUCKET: z.string().optional(),
     AWS_REGION: z.string().default('eu-west-2'),
     PRESIGNED_URL_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+
+    /**
+     * Points the S3 client at a local MinIO instead of AWS. Unset in every
+     * real environment, where the SDK resolves AWS's own endpoints and the
+     * function's IAM role supplies credentials.
+     */
+    S3_ENDPOINT: z.string().url().optional(),
+    S3_ACCESS_KEY: z.string().optional(),
+    S3_SECRET_KEY: z.string().optional(),
   })
   .superRefine((env, ctx) => {
     const isProduction = env.NODE_ENV === 'production';
@@ -35,6 +44,16 @@ const schema = z
         code: z.ZodIssueCode.custom,
         message:
           'DEV_USER_ID must not be set when NODE_ENV=production — it disables authentication entirely.',
+      });
+    }
+
+    // A custom endpoint means "talk to something that is not AWS", which in
+    // production would silently divert every archer's photos.
+    if (isProduction && env.S3_ENDPOINT) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'S3_ENDPOINT must not be set when NODE_ENV=production — it redirects object storage away from AWS.',
       });
     }
 

@@ -18,7 +18,27 @@ import { db } from '../db/client.js';
 import { rounds, sessions } from '../db/schema.js';
 import { env } from '../env.js';
 
-const s3 = env.S3_BUCKET ? new S3Client({ region: env.AWS_REGION }) : null;
+/**
+ * In AWS this is a plain client: the region comes from config and credentials
+ * from the function's IAM role. Locally it is pointed at MinIO, which needs an
+ * explicit endpoint, static credentials, and path-style addressing — MinIO
+ * serves `host/bucket/key` rather than the virtual-host form AWS uses.
+ */
+const s3 = env.S3_BUCKET
+  ? new S3Client({
+      region: env.AWS_REGION,
+      ...(env.S3_ENDPOINT
+        ? {
+            endpoint: env.S3_ENDPOINT,
+            forcePathStyle: true,
+            credentials: {
+              accessKeyId: env.S3_ACCESS_KEY ?? '',
+              secretAccessKey: env.S3_SECRET_KEY ?? '',
+            },
+          }
+        : {}),
+    })
+  : null;
 
 const params = z.object({ id: z.string().uuid() });
 

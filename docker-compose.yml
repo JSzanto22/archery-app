@@ -35,6 +35,46 @@ services:
       retries: 12
       start_period: 20s
 
+  # S3-compatible object storage for round photos.
+  #
+  # Photo upload was unverifiable without an AWS account, which is how it came
+  # to be half-built: the endpoints existed and nothing called them. MinIO
+  # speaks the same API, so the whole path — presign, PUT, fetch — runs
+  # locally and in CI.
+  minio:
+    image: minio/minio:latest
+    container_name: archery-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-archery}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-archery_dev_secret}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - archery_minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # Creates the bucket once, then exits.
+  minio-init:
+    image: minio/mc:latest
+    container_name: archery-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+      mc alias set local http://minio:9000 ${S3_ACCESS_KEY:-archery} ${S3_SECRET_KEY:-archery_dev_secret} &&
+      mc mb --ignore-existing local/${S3_BUCKET:-archery-photos} &&
+      echo 'bucket ready'
+      "
+    restart: "no"
+
   # Optional web SQL client: docker compose --profile tools up -d
   adminer:
     image: adminer:5
@@ -51,3 +91,4 @@ services:
 
 volumes:
   archery_pgdata:
+  archery_minio:
