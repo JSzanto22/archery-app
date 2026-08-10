@@ -87,12 +87,6 @@ export interface DevSeedResult {
   arrows: number;
 }
 
-/** True when demo sessions already exist, so the button can describe itself. */
-export async function hasAnySessions(): Promise<boolean> {
-  const count = await collections.sessions.query().fetchCount();
-  return count > 0;
-}
-
 export async function seedDemoData(sessionCount = 14): Promise<DevSeedResult> {
   const targets = await collections.targets
     .query(Q.where('id', Q.oneOf([WA_122, WA_40_3SPOT])))
@@ -197,5 +191,3 @@ export async function clearAllSessions(): Promise<void> {
     for (const session of sessions) await session.destroyPermanently();
   });
 }
-
-export const DEMO_PRESET_IDS = PRESET_TARGETS.map((p) => p.id);

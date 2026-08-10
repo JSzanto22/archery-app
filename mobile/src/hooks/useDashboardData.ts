@@ -19,6 +19,7 @@ import {
   summarizeSession,
 } from '../analytics/dashboard';
 import { collections } from '../db';
+import { resolveFaceGeometry } from '../db/faceGeometry';
 import { findPreset } from '../db/presets';
 import { centroid } from '../scoring/grouping';
 import { Zone } from '../scoring/scoring';
@@ -129,12 +130,8 @@ export function useDashboardData(range: RangeKey): DashboardData {
         // mixes faces is possible but rare; the aim points only affect grouping,
         // and using the dominant face is better than pretending it is square.
         const targetId = sessionRounds[0]?.targetId;
-        const preset = targetId ? findPreset(targetId) : undefined;
         const target = targetId ? targetById.get(targetId) : undefined;
-
-        // A stored face width wins: the archer may have measured their own
-        // printed face, and their measurement beats the standard.
-        const faceWidthCm = target?.faceWidthCm ?? preset?.faceWidthCm ?? null;
+        const face = target ? resolveFaceGeometry(target) : null;
 
         return {
           sessionId: session.id,
@@ -149,13 +146,15 @@ export function useDashboardData(range: RangeKey): DashboardData {
           location: session.location,
           isPendingSync: session.isPendingSync,
           arrows: flatArrows,
-          aimPoints: preset?.aimPoints ?? [{ x: 0.5, y: 0.5 }],
-          aspectRatio: target?.aspectRatio ?? preset?.aspectRatio ?? 1,
-          faceWidthCm,
+          aimPoints: face?.aimPoints ?? [{ x: 0.5, y: 0.5 }],
+          aspectRatio: face?.aspectRatio ?? 1,
+          faceWidthCm: face?.faceWidthCm ?? null,
           maxArrowScore: Math.max(
             0,
             ...flatArrows.map((a) => a.scoreValue),
-            ...(preset ? preset.zones.map((z) => z.scoreValue) : []),
+            ...(targetId
+              ? (findPreset(targetId)?.zones.map((z) => z.scoreValue) ?? [])
+              : []),
           ),
         };
       });
@@ -188,7 +187,7 @@ export function useDashboardData(range: RangeKey): DashboardData {
 
         if (dominant) {
           const zones = await dominant.toScoringZones();
-          const preset = findPreset(dominantId);
+          const dominantFace = resolveFaceGeometry(dominant);
 
           const points = arrows.map((a) => ({
             id: a.id,
@@ -199,8 +198,8 @@ export function useDashboardData(range: RangeKey): DashboardData {
 
           map = {
             zones,
-            isPreset: dominant.type === 'preset',
-            aspectRatio: dominant.aspectRatio ?? preset?.aspectRatio ?? 1,
+            isPreset: dominantFace.isPreset,
+            aspectRatio: dominantFace.aspectRatio,
             targetName: dominant.name,
             points,
             centroid: centroid(points),

@@ -57,7 +57,7 @@ export function centroid(points: Point[]): Point | null {
  *
  * Measured about the centroid rather than the target centre on purpose: a
  * tight group in the 7 ring is good shooting with a bad sight mark, and the two
- * problems have different fixes. {@link accuracyOffset} reports the other half.
+ * problems have different fixes. {@link groupBias} reports the other half.
  */
 export function groupSpread(
   points: Point[],
@@ -70,20 +70,6 @@ export function groupSpread(
 
   const total = points.reduce((sum, p) => sum + scaledDistance(p, c, aspect), 0);
   return total / points.length;
-}
-
-/**
- * Distance from the group's centre to the aim point — systematic bias, the part
- * a sight adjustment fixes.
- */
-export function accuracyOffset(
-  points: Point[],
-  aimPoint: Point = { x: 0.5, y: 0.5 },
-  options: GroupingOptions = {},
-): number | null {
-  const c = centroid(points);
-  if (!c) return null;
-  return scaledDistance(c, aimPoint, options.aspectRatio ?? 1);
 }
 
 /**

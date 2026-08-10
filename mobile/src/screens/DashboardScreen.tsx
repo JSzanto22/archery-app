@@ -24,6 +24,12 @@ import {
 import { useAuth } from '../auth/AuthProvider';
 import { seedDemoData } from '../db/devSeed';
 import { useDashboardData } from '../hooks/useDashboardData';
+import {
+  formatDate,
+  formatPercent,
+  formatTime,
+  plural,
+} from '../lib/format';
 import { useSync } from '../sync/useSync';
 import { RootStackParamList } from '../navigation';
 import { radius, spacing, type, usePalette } from '../theme';
@@ -487,29 +493,6 @@ function SessionRow({
   );
 }
 
-function formatTime(d: Date): string {
-  return d.toLocaleTimeString(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
-function plural(n: number, unit: string): string {
-  return `${n} ${unit}${n === 1 ? '' : 's'}`;
-}
-
-function formatDate(d: Date): string {
-  return d.toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
-}
-
-/** A normalized fraction of face width reads better as a percentage. */
-function formatPercent(v: number): string {
-  return `${(v * 100).toFixed(1)}%`;
-}
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },

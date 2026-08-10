@@ -6,7 +6,8 @@ import TargetFace from '../components/TargetFace';
 import { Banner, Button, Screen, SectionHeader } from '../components/ui';
 import { Round, Session, collections } from '../db';
 import { deleteSession } from '../db/actions';
-import { findPreset } from '../db/presets';
+import { isMultiSpot, resolveFaceGeometry } from '../db/faceGeometry';
+import { formatLongDate, formatPercent, plural } from '../lib/format';
 import { groupSpread, groupSpreadMultiSpot } from '../scoring/grouping';
 import { Zone } from '../scoring/scoring';
 import { RootStackParamList } from '../navigation';
@@ -68,14 +69,14 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
         const target = await collections.targets.find(round.targetId);
         const zones = await target.toScoringZones();
         const arrows = await round.orderedArrows.fetch();
-        const preset = findPreset(target.id);
-        const aspectRatio = target.effectiveAspectRatio;
+        const face = resolveFaceGeometry(target);
+        const aspectRatio = face.aspectRatio;
         const points = arrows.map((a) => ({ x: a.x, y: a.y }));
 
         return {
           round,
           targetName: target.name,
-          isPreset: target.type === 'preset',
+          isPreset: face.isPreset,
           aspectRatio,
           zones,
           marks: arrows.map((a) => ({
@@ -85,10 +86,9 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
             scoreValue: a.scoreValue,
           })),
           score: arrows.reduce((sum, a) => sum + a.scoreValue, 0),
-          grouping:
-            preset && preset.aimPoints.length > 1
-              ? groupSpreadMultiSpot(points, preset.aimPoints, { aspectRatio })
-              : groupSpread(points, { aspectRatio }),
+          grouping: isMultiSpot(face)
+            ? groupSpreadMultiSpot(points, face.aimPoints, { aspectRatio })
+            : groupSpread(points, { aspectRatio }),
         };
       }),
     );
@@ -130,12 +130,7 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
       ) : null}
 
       <Text style={[type.title, { color: palette.textPrimary }]}>
-        {session.shotAt.toLocaleDateString(undefined, {
-          weekday: 'long',
-          day: 'numeric',
-          month: 'long',
-          year: 'numeric',
-        })}
+        {formatLongDate(session.shotAt)}
       </Text>
       <Text style={[styles.meta, { color: palette.textSecondary }]}>
         {meta || 'No details recorded'}
@@ -160,7 +155,7 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
             ? `${(totalScore / arrowCount).toFixed(2)} per arrow`
             : 'no arrows'}
           {overallGrouping !== null
-            ? ` · ${(overallGrouping * 100).toFixed(1)}% grouping`
+            ? ` · ${formatPercent(overallGrouping)} grouping`
             : ''}
         </Text>
       </View>
@@ -183,10 +178,9 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
             }
           />
           <Text style={[styles.roundMeta, { color: palette.textMuted }]}>
-            {view.targetName} · {view.marks.length}{' '}
-            {view.marks.length === 1 ? 'arrow' : 'arrows'}
+            {view.targetName} · {plural(view.marks.length, 'arrow')}
             {view.grouping !== null
-              ? ` · ${(view.grouping * 100).toFixed(1)}% group`
+              ? ` · ${formatPercent(view.grouping)} group`
               : ''}
           </Text>
 
@@ -252,7 +246,3 @@ const styles = StyleSheet.create({
   empty: { textAlign: 'center', marginTop: spacing.xl },
   dangerZone: { marginTop: spacing.xl, alignItems: 'flex-start' },
 });
-
-function plural(n: number, unit: string): string {
-  return `${n} ${unit}${n === 1 ? '' : 's'}`;
-}

@@ -8,8 +8,8 @@
 import { pointInShape } from '../geometry';
 import { MISS, maxZoneScore, scoreArrow, Zone } from '../scoring';
 import {
-  accuracyOffset,
   centroid,
+  groupBias,
   groupSpread,
   groupSpreadMultiSpot,
   heatMapGrid,
@@ -267,7 +267,9 @@ describe('grouping', () => {
     const shifted = tightGroup.map((p) => ({ x: p.x - 0.25, y: p.y + 0.2 }));
 
     expect(groupSpread(shifted)).toBeCloseTo(groupSpread(tightGroup)!, 10);
-    expect(accuracyOffset(shifted)!).toBeGreaterThan(accuracyOffset(tightGroup)!);
+    expect(groupBias(shifted)!.distance).toBeGreaterThan(
+      groupBias(tightGroup)!.distance,
+    );
   });
 
   it('corrects distance for a non-square face', () => {

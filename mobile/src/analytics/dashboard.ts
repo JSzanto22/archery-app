@@ -219,23 +219,3 @@ export function rangeStart(range: RangeKey, now = new Date()): Date | null {
   return new Date(now.getTime() - days[range] * 24 * 60 * 60 * 1000);
 }
 
-export interface DashboardFilters {
-  distanceM?: number | null;
-  gearProfileId?: string | null;
-}
-
-export function applyFilters(
-  summaries: SessionSummary[],
-  filters: DashboardFilters,
-): SessionSummary[] {
-  return summaries.filter((s) => {
-    if (
-      filters.distanceM !== undefined &&
-      filters.distanceM !== null &&
-      s.distanceM !== filters.distanceM
-    ) {
-      return false;
-    }
-    return true;
-  });
-}

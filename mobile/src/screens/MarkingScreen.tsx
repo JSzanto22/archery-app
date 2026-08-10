@@ -37,7 +37,7 @@ import {
   restoreArrow,
   toRestorable,
 } from '../db/actions';
-import { findPreset } from '../db/presets';
+import { isMultiSpot, resolveFaceGeometry } from '../db/faceGeometry';
 import { WriteQueue, createWriteQueue } from '../lib/writeQueue';
 import { groupSpread, groupSpreadMultiSpot } from '../scoring/grouping';
 import { Zone, maxZoneScore } from '../scoring/scoring';
@@ -125,9 +125,9 @@ export default function MarkingScreen({ navigation, route }: Props) {
     load();
   }, [load]);
 
-  const preset = target ? findPreset(target.id) : undefined;
-  const aspectRatio = target?.effectiveAspectRatio ?? 1;
-  const faceWidthCm = target?.faceWidthCm ?? preset?.faceWidthCm ?? null;
+  const face = target ? resolveFaceGeometry(target) : null;
+  const aspectRatio = face?.aspectRatio ?? 1;
+  const faceWidthCm = face?.faceWidthCm ?? null;
 
   const marks: Mark[] = arrows.map((a) => ({
     id: a.id,
@@ -141,8 +141,8 @@ export default function MarkingScreen({ navigation, route }: Props) {
   const points = arrows.map((a) => ({ x: a.x, y: a.y }));
 
   const grouping =
-    preset && preset.aimPoints.length > 1
-      ? groupSpreadMultiSpot(points, preset.aimPoints, { aspectRatio })
+    face && isMultiSpot(face)
+      ? groupSpreadMultiSpot(points, face.aimPoints, { aspectRatio })
       : groupSpread(points, { aspectRatio });
 
   const selectedArrow = arrows.find((a) => a.id === selected) ?? null;
@@ -412,7 +412,7 @@ export default function MarkingScreen({ navigation, route }: Props) {
           zones={zones}
           marks={marks}
           photoUri={round.localPhotoUri}
-          isPreset={target.type === 'preset'}
+          isPreset={face?.isPreset ?? true}
           aspectRatio={aspectRatio}
           selectedMarkId={selected}
           onPlace={onPlace}
