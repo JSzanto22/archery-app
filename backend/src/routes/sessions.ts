@@ -41,13 +41,17 @@ const listQuery = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 });
 
-export default async function sessionRoutes(app: FastifyInstance): Promise<void> {
+export default async function sessionRoutes(
+  app: FastifyInstance,
+): Promise<void> {
   app.addHook('preHandler', requireAuth);
 
   app.get('/sessions', async (request, reply) => {
     const query = listQuery.safeParse(request.query);
     if (!query.success) {
-      return reply.code(400).send({ error: 'Invalid query', detail: query.error.issues });
+      return reply
+        .code(400)
+        .send({ error: 'Invalid query', detail: query.error.issues });
     }
 
     const { from, to, distance, gear_id: gearId, limit } = query.data;
@@ -68,14 +72,19 @@ export default async function sessionRoutes(app: FastifyInstance): Promise<void>
 
   /** A session with its full sub-tree: the shape the detail screen needs. */
   app.get('/sessions/:id', async (request, reply) => {
-    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const params = z
+      .object({ id: z.string().uuid() })
+      .safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid id' });
 
     const found = await db
       .select()
       .from(sessions)
       .where(
-        and(eq(sessions.id, params.data.id), eq(sessions.ownerId, request.userId)),
+        and(
+          eq(sessions.id, params.data.id),
+          eq(sessions.ownerId, request.userId),
+        ),
       )
       .limit(1);
 
@@ -127,7 +136,9 @@ export default async function sessionRoutes(app: FastifyInstance): Promise<void>
   app.post('/sessions', async (request, reply) => {
     const body = sessionInput.safeParse(request.body);
     if (!body.success) {
-      return reply.code(400).send({ error: 'Invalid body', detail: body.error.issues });
+      return reply
+        .code(400)
+        .send({ error: 'Invalid body', detail: body.error.issues });
     }
 
     const { rounds: roundPayload, distanceM, ...session } = body.data;
@@ -194,7 +205,9 @@ export default async function sessionRoutes(app: FastifyInstance): Promise<void>
   });
 
   app.patch('/sessions/:id', async (request, reply) => {
-    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const params = z
+      .object({ id: z.string().uuid() })
+      .safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid id' });
 
     const body = sessionInput
@@ -202,7 +215,9 @@ export default async function sessionRoutes(app: FastifyInstance): Promise<void>
       .omit({ id: true, rounds: true })
       .safeParse(request.body);
     if (!body.success) {
-      return reply.code(400).send({ error: 'Invalid body', detail: body.error.issues });
+      return reply
+        .code(400)
+        .send({ error: 'Invalid body', detail: body.error.issues });
     }
 
     const { distanceM, ...fields } = body.data;
@@ -215,7 +230,10 @@ export default async function sessionRoutes(app: FastifyInstance): Promise<void>
         updatedAt: new Date(),
       })
       .where(
-        and(eq(sessions.id, params.data.id), eq(sessions.ownerId, request.userId)),
+        and(
+          eq(sessions.id, params.data.id),
+          eq(sessions.ownerId, request.userId),
+        ),
       )
       .returning();
 
@@ -224,14 +242,19 @@ export default async function sessionRoutes(app: FastifyInstance): Promise<void>
   });
 
   app.delete('/sessions/:id', async (request, reply) => {
-    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const params = z
+      .object({ id: z.string().uuid() })
+      .safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid id' });
 
     // Rounds and arrows go with it via ON DELETE CASCADE in the schema.
     const deleted = await db
       .delete(sessions)
       .where(
-        and(eq(sessions.id, params.data.id), eq(sessions.ownerId, request.userId)),
+        and(
+          eq(sessions.id, params.data.id),
+          eq(sessions.ownerId, request.userId),
+        ),
       )
       .returning({ id: sessions.id });
 
@@ -240,12 +263,16 @@ export default async function sessionRoutes(app: FastifyInstance): Promise<void>
   });
 
   app.post('/sessions/:id/rounds', async (request, reply) => {
-    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const params = z
+      .object({ id: z.string().uuid() })
+      .safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid id' });
 
     const body = roundInput.safeParse(request.body);
     if (!body.success) {
-      return reply.code(400).send({ error: 'Invalid body', detail: body.error.issues });
+      return reply
+        .code(400)
+        .send({ error: 'Invalid body', detail: body.error.issues });
     }
 
     const owns = await ownsSession(params.data.id, request.userId);
@@ -274,12 +301,18 @@ export default async function sessionRoutes(app: FastifyInstance): Promise<void>
    * only formulation that cannot drift out of step with what is on screen.
    */
   app.put('/rounds/:id/arrows', async (request, reply) => {
-    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const params = z
+      .object({ id: z.string().uuid() })
+      .safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid id' });
 
-    const body = z.object({ arrows: z.array(arrowInput) }).safeParse(request.body);
+    const body = z
+      .object({ arrows: z.array(arrowInput) })
+      .safeParse(request.body);
     if (!body.success) {
-      return reply.code(400).send({ error: 'Invalid body', detail: body.error.issues });
+      return reply
+        .code(400)
+        .send({ error: 'Invalid body', detail: body.error.issues });
     }
 
     const owned = await db
@@ -287,7 +320,10 @@ export default async function sessionRoutes(app: FastifyInstance): Promise<void>
       .from(rounds)
       .innerJoin(sessions, eq(rounds.sessionId, sessions.id))
       .where(
-        and(eq(rounds.id, params.data.id), eq(sessions.ownerId, request.userId)),
+        and(
+          eq(rounds.id, params.data.id),
+          eq(sessions.ownerId, request.userId),
+        ),
       )
       .limit(1);
 
@@ -317,7 +353,9 @@ export default async function sessionRoutes(app: FastifyInstance): Promise<void>
   });
 
   app.delete('/rounds/:id', async (request, reply) => {
-    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const params = z
+      .object({ id: z.string().uuid() })
+      .safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid id' });
 
     const owned = await db
@@ -325,7 +363,10 @@ export default async function sessionRoutes(app: FastifyInstance): Promise<void>
       .from(rounds)
       .innerJoin(sessions, eq(rounds.sessionId, sessions.id))
       .where(
-        and(eq(rounds.id, params.data.id), eq(sessions.ownerId, request.userId)),
+        and(
+          eq(rounds.id, params.data.id),
+          eq(sessions.ownerId, request.userId),
+        ),
       )
       .limit(1);
 
@@ -336,7 +377,10 @@ export default async function sessionRoutes(app: FastifyInstance): Promise<void>
   });
 }
 
-async function ownsSession(sessionId: string, userId: string): Promise<boolean> {
+async function ownsSession(
+  sessionId: string,
+  userId: string,
+): Promise<boolean> {
   const rows = await db
     .select({ id: sessions.id })
     .from(sessions)

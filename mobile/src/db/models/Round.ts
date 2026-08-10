@@ -1,5 +1,11 @@
 ﻿import { Model, Q } from '@nozbe/watermelondb';
-import { children, date, field, lazy, relation } from '@nozbe/watermelondb/decorators';
+import {
+  children,
+  date,
+  field,
+  lazy,
+  relation,
+} from '@nozbe/watermelondb/decorators';
 
 import Arrow from './Arrow';
 import Session from './Session';

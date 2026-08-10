@@ -68,7 +68,10 @@ export function groupSpread(
   const aspect = options.aspectRatio ?? 1;
   const c = centroid(points)!;
 
-  const total = points.reduce((sum, p) => sum + scaledDistance(p, c, aspect), 0);
+  const total = points.reduce(
+    (sum, p) => sum + scaledDistance(p, c, aspect),
+    0,
+  );
   return total / points.length;
 }
 

@@ -1,6 +1,6 @@
 # AWS Lambda Deployment Assessment
 
-*2026-08-01 — assessment only; nothing has been migrated.*
+_2026-08-01 — assessment only; nothing has been migrated._
 
 ## Verdict
 
@@ -10,14 +10,14 @@ application code. Two real decisions and one genuine snag are listed at the end.
 
 ## What is already Lambda-ready
 
-| Concern | State |
-| --- | --- |
-| Handler | [`src/lambda.ts`](../backend/src/lambda.ts) already wraps the Fastify app with `@fastify/aws-lambda`; app and DB pool are built at module scope so warm containers reuse both |
-| Statelessness | No server-side sessions; identity is re-derived from the JWT on every request; the only state is Postgres |
-| Env config | `env.ts` validates at module load, so a misconfigured function fails at deploy, not on a user's request. `DEV_USER_ID` is hard-refused in production |
-| Large payloads | Photos go direct to S3 via pre-signed URLs; image bytes never transit Lambda |
-| Logging | Pino to stdout → CloudWatch as-is; auth headers already redacted |
-| Health check | `GET /health` unauthenticated, usable by synthetic monitors |
+| Concern        | State                                                                                                                                                                         |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Handler        | [`src/lambda.ts`](../backend/src/lambda.ts) already wraps the Fastify app with `@fastify/aws-lambda`; app and DB pool are built at module scope so warm containers reuse both |
+| Statelessness  | No server-side sessions; identity is re-derived from the JWT on every request; the only state is Postgres                                                                     |
+| Env config     | `env.ts` validates at module load, so a misconfigured function fails at deploy, not on a user's request. `DEV_USER_ID` is hard-refused in production                          |
+| Large payloads | Photos go direct to S3 via pre-signed URLs; image bytes never transit Lambda                                                                                                  |
+| Logging        | Pino to stdout → CloudWatch as-is; auth headers already redacted                                                                                                              |
+| Health check   | `GET /health` unauthenticated, usable by synthetic monitors                                                                                                                   |
 
 ## Required changes
 

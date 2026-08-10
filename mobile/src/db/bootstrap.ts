@@ -13,7 +13,6 @@ import { PRESET_TARGETS } from './presets';
 import Target from './models/Target';
 import TargetZone from './models/TargetZone';
 
-
 export async function ensurePresetTargets(): Promise<number> {
   const wanted = PRESET_TARGETS.map((p) => p.id);
 

@@ -1,5 +1,11 @@
 ﻿import { Model, Q } from '@nozbe/watermelondb';
-import { children, date, field, lazy, relation } from '@nozbe/watermelondb/decorators';
+import {
+  children,
+  date,
+  field,
+  lazy,
+  relation,
+} from '@nozbe/watermelondb/decorators';
 
 import GearProfile from './GearProfile';
 import Round from './Round';

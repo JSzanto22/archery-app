@@ -122,7 +122,9 @@ export default function MarkingScreen({ navigation, route }: Props) {
   }, [roundId, sessionId]);
 
   useEffect(() => {
-    load();
+    // `void`: load() reports its own failures into loadError, so there is
+    // nothing for a caller to handle and nothing to await.
+    void load();
   }, [load]);
 
   const face = target ? resolveFaceGeometry(target) : null;
@@ -152,7 +154,9 @@ export default function MarkingScreen({ navigation, route }: Props) {
       if (!round || !target) return;
 
       setUndoOffer(null);
-      enqueue(async () => {
+      // Deliberately not awaited: the queue owns ordering and reports failures
+      // through the banner, and blocking here would stall the next tap.
+      void enqueue(async () => {
         const created = await addArrow(round, target, x, y);
         // Append rather than refetch the whole end: a full reload per arrow is
         // what made rapid entry slow enough to need the guard in the first place.
@@ -166,7 +170,7 @@ export default function MarkingScreen({ navigation, route }: Props) {
     (markId: string, x: number, y: number) => {
       if (!target) return;
 
-      enqueue(async () => {
+      void enqueue(async () => {
         const mark = arrows.find((a) => a.id === markId);
         if (!mark) return;
 
@@ -184,7 +188,7 @@ export default function MarkingScreen({ navigation, route }: Props) {
     (mark: Arrow, label: string) => {
       const restorable = toRestorable(mark);
 
-      enqueue(async () => {
+      void enqueue(async () => {
         await deleteArrow(mark);
         setArrows((prev) => prev.filter((a) => a.id !== mark.id));
         setSelected(null);
@@ -199,7 +203,7 @@ export default function MarkingScreen({ navigation, route }: Props) {
     const offer = undoOffer;
     setUndoOffer(null);
 
-    enqueue(async () => {
+    void enqueue(async () => {
       const restored = await restoreArrow(round, offer.arrow);
       setArrows((prev) =>
         [...prev, restored].sort(
@@ -271,7 +275,7 @@ export default function MarkingScreen({ navigation, route }: Props) {
           tone="error"
           message={loadError}
           actionLabel="Retry"
-          onAction={load}
+          onAction={() => void load()}
         />
         <Button
           label="Back to session"
@@ -290,10 +294,16 @@ export default function MarkingScreen({ navigation, route }: Props) {
           {[0, 1, 2].map((i) => (
             <View key={i} style={styles.stat}>
               <View
-                style={[styles.skelLabel, { backgroundColor: palette.gridline }]}
+                style={[
+                  styles.skelLabel,
+                  { backgroundColor: palette.gridline },
+                ]}
               />
               <View
-                style={[styles.skelValue, { backgroundColor: palette.gridline }]}
+                style={[
+                  styles.skelValue,
+                  { backgroundColor: palette.gridline },
+                ]}
               />
             </View>
           ))}
@@ -477,12 +487,21 @@ export default function MarkingScreen({ navigation, route }: Props) {
             if (last) removeArrow(last, 'Last arrow removed.');
           }}
         />
-        <Button label="Photo" variant="text" onPress={onAddPhoto} />
+        <Button
+          label="Photo"
+          variant="text"
+          onPress={() => void onAddPhoto()}
+        />
       </View>
 
       <View style={styles.mainActions}>
         <View style={styles.actionFlex}>
-          <Button label="Next end" variant="tonal" block onPress={onNextEnd} />
+          <Button
+            label="Next end"
+            variant="tonal"
+            block
+            onPress={() => void onNextEnd()}
+          />
         </View>
         <View style={styles.actionFlex}>
           <Button
@@ -579,7 +598,11 @@ function Stat({
 }
 
 const styles = StyleSheet.create({
-  endStrip: { gap: spacing.sm, paddingBottom: spacing.md, paddingRight: spacing.md },
+  endStrip: {
+    gap: spacing.sm,
+    paddingBottom: spacing.md,
+    paddingRight: spacing.md,
+  },
   endChip: {
     minWidth: 48,
     minHeight: 48,

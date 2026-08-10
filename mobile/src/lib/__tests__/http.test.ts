@@ -31,7 +31,7 @@ function stallingFetch(): jest.Mock {
 describe('fetchWithTimeout', () => {
   it('returns the response when the server answers in time', async () => {
     const body = new Response('ok', { status: 200 });
-    global.fetch = jest.fn().mockResolvedValue(body) as unknown as typeof fetch;
+    global.fetch = jest.fn().mockResolvedValue(body);
 
     const res = await fetchWithTimeout('https://example.test/health');
 
@@ -39,7 +39,7 @@ describe('fetchWithTimeout', () => {
   });
 
   it('rejects with TimeoutError when the connection stalls', async () => {
-    global.fetch = stallingFetch() as unknown as typeof fetch;
+    global.fetch = stallingFetch();
 
     await expect(
       fetchWithTimeout('https://example.test/sync/pull', { timeoutMs: 20 }),
@@ -47,7 +47,7 @@ describe('fetchWithTimeout', () => {
   });
 
   it('names the url and deadline, so a log says which call hung', async () => {
-    global.fetch = stallingFetch() as unknown as typeof fetch;
+    global.fetch = stallingFetch();
 
     await expect(
       fetchWithTimeout('https://example.test/slow', { timeoutMs: 15 }),
@@ -56,7 +56,7 @@ describe('fetchWithTimeout', () => {
 
   it('aborts the request rather than leaving it running', async () => {
     const spy = stallingFetch();
-    global.fetch = spy as unknown as typeof fetch;
+    global.fetch = spy;
 
     await expect(
       fetchWithTimeout('https://example.test/x', { timeoutMs: 10 }),
@@ -71,7 +71,7 @@ describe('fetchWithTimeout', () => {
     // A genuine failure and a deadline want different messages, so they must
     // stay distinguishable.
     const failure = new TypeError('Network request failed');
-    global.fetch = jest.fn().mockRejectedValue(failure) as unknown as typeof fetch;
+    global.fetch = jest.fn().mockRejectedValue(failure);
 
     await expect(fetchWithTimeout('https://example.test/x')).rejects.toBe(
       failure,
@@ -79,7 +79,7 @@ describe('fetchWithTimeout', () => {
   });
 
   it("honours a caller's own abort signal", async () => {
-    global.fetch = stallingFetch() as unknown as typeof fetch;
+    global.fetch = stallingFetch();
     const controller = new AbortController();
 
     const pending = fetchWithTimeout('https://example.test/x', {
@@ -94,9 +94,7 @@ describe('fetchWithTimeout', () => {
 
   it('does not leave a timer running after a fast response', async () => {
     jest.useFakeTimers();
-    global.fetch = jest
-      .fn()
-      .mockResolvedValue(new Response('ok')) as unknown as typeof fetch;
+    global.fetch = jest.fn().mockResolvedValue(new Response('ok'));
 
     await fetchWithTimeout('https://example.test/x', { timeoutMs: 5000 });
 

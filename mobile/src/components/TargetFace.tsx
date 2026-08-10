@@ -52,12 +52,7 @@ import {
 import { heatMapGrid } from '../scoring/grouping';
 import { maxZoneScore, scoreArrow, Zone } from '../scoring/scoring';
 import { arrowMark, fonts, radius, usePalette, zoneColors } from '../theme';
-import {
-  DragState,
-  beginDrag,
-  finishDrag,
-  updateDrag,
-} from './markingGesture';
+import { DragState, beginDrag, finishDrag, updateDrag } from './markingGesture';
 
 export interface Mark {
   id: string;
@@ -181,7 +176,7 @@ export default function TargetFace({
     }> = [];
 
     for (let i = 0; i < grid.length; i++) {
-      const intensity = grid[i]!;
+      const intensity = grid[i];
       if (intensity <= 0) continue;
       const row = Math.floor(i / HEAT_MAP_RESOLUTION);
       const col = i % HEAT_MAP_RESOLUTION;
@@ -288,7 +283,9 @@ export default function TargetFace({
   const loupeLeft = drag
     ? Math.min(Math.max(drag.px - LOUPE_SIZE / 2, 4), size.w - LOUPE_SIZE - 4)
     : 0;
-  const loupeTop = drag ? drag.py - LOUPE_SIZE - LOUPE_LIFT + LOUPE_SIZE / 2 : 0;
+  const loupeTop = drag
+    ? drag.py - LOUPE_SIZE - LOUPE_LIFT + LOUPE_SIZE / 2
+    : 0;
   const loupeAbove = drag ? loupeTop >= 0 : true;
 
   const face = (
@@ -359,8 +356,8 @@ export default function TargetFace({
         {(heatCells ? [] : marks).map((mark) => {
           // The mark being moved renders at the drag position instead.
           const moving = drag?.mode === 'move' && drag.markId === mark.id;
-          const x = moving ? drag!.x : mark.x;
-          const y = moving ? drag!.y : mark.y;
+          const x = moving ? drag.x : mark.x;
+          const y = moving ? drag.y : mark.y;
 
           if (dense) {
             // Translucent so overlapping arrows accumulate into visible
@@ -473,7 +470,9 @@ export default function TargetFace({
             styles.loupeWrap,
             {
               left: loupeLeft,
-              top: loupeAbove ? loupeTop : drag.py + LOUPE_LIFT - LOUPE_SIZE / 2,
+              top: loupeAbove
+                ? loupeTop
+                : drag.py + LOUPE_LIFT - LOUPE_SIZE / 2,
             },
           ]}
         >

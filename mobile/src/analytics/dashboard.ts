@@ -218,4 +218,3 @@ export function rangeStart(range: RangeKey, now = new Date()): Date | null {
   if (range === 'all') return null;
   return new Date(now.getTime() - days[range] * 24 * 60 * 60 * 1000);
 }
-

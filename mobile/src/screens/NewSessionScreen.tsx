@@ -40,7 +40,7 @@ export default function NewSessionScreen({ navigation }: Props) {
   }, [selectedTarget?.id, selectedTarget?.faceWidthCm]);
 
   useEffect(() => {
-    (async () => {
+    void (async () => {
       const [allTargets, allGear] = await Promise.all([
         collections.targets.query().fetch(),
         collections.gearProfiles.query().fetch(),
@@ -210,7 +210,7 @@ export default function NewSessionScreen({ navigation }: Props) {
           variant="filled"
           block
           disabled={!canSave}
-          onPress={onStart}
+          onPress={() => void onStart()}
         />
       </View>
     </Screen>

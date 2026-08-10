@@ -239,17 +239,17 @@ describe('rotation', () => {
 
 describe('grouping', () => {
   const tightGroup = [
-    { x: 0.50, y: 0.50 },
-    { x: 0.52, y: 0.50 },
+    { x: 0.5, y: 0.5 },
+    { x: 0.52, y: 0.5 },
     { x: 0.51, y: 0.52 },
     { x: 0.49, y: 0.51 },
   ];
 
   const looseGroup = [
-    { x: 0.30, y: 0.30 },
-    { x: 0.70, y: 0.30 },
-    { x: 0.70, y: 0.70 },
-    { x: 0.30, y: 0.70 },
+    { x: 0.3, y: 0.3 },
+    { x: 0.7, y: 0.3 },
+    { x: 0.7, y: 0.7 },
+    { x: 0.3, y: 0.7 },
   ];
 
   it('reports a smaller spread for a tighter group', () => {
@@ -292,7 +292,7 @@ describe('grouping', () => {
     ];
     // One tight arrow per spot: excellent shooting.
     const marks = [
-      { x: 0.50, y: 1 / 6 + 0.005 },
+      { x: 0.5, y: 1 / 6 + 0.005 },
       { x: 0.51, y: 3 / 6 - 0.004 },
       { x: 0.49, y: 5 / 6 + 0.003 },
     ];

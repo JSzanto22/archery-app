@@ -1,6 +1,6 @@
 # UI Redesign Direction — Minimal & Fluent
 
-*2026-08-01 — direction for approval; implementation follows sign-off.*
+_2026-08-01 — direction for approval; implementation follows sign-off._
 
 ## Research, briefly
 

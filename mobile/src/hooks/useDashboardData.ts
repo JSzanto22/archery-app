@@ -60,7 +60,7 @@ export function useDashboardData(range: RangeKey): DashboardData {
   useEffect(() => {
     let cancelled = false;
 
-    (async () => {
+    void (async () => {
       setLoading(true);
 
       const start = rangeStart(range);
@@ -181,7 +181,7 @@ export function useDashboardData(range: RangeKey): DashboardData {
       if (faceCounts.size > 0) {
         const [dominantId] = [...faceCounts.entries()].sort(
           (a, b) => b[1] - a[1],
-        )[0]!;
+        )[0];
 
         const dominant = targetById.get(dominantId);
 

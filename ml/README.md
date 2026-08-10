@@ -5,7 +5,7 @@ Computer-vision arrow detection. **Phase 2+ — not required for the MVP.**
 ## Scope
 
 - Target face and arrow detection from a round photo
-- Producing normalized (x, y) arrow positions — the *same* output the manual
+- Producing normalized (x, y) arrow positions — the _same_ output the manual
   tap-to-mark flow produces
 - Training, evaluation, and dataset tooling
 - Export for on-device inference, plus a backend fallback path

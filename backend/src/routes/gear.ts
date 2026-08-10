@@ -28,7 +28,9 @@ export default async function gearRoutes(app: FastifyInstance): Promise<void> {
   app.post('/gear', async (request, reply) => {
     const body = createBody.safeParse(request.body);
     if (!body.success) {
-      return reply.code(400).send({ error: 'Invalid body', detail: body.error.issues });
+      return reply
+        .code(400)
+        .send({ error: 'Invalid body', detail: body.error.issues });
     }
 
     // ownerId comes from the token. A client-supplied owner would let anyone
@@ -42,12 +44,16 @@ export default async function gearRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.patch('/gear/:id', async (request, reply) => {
-    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const params = z
+      .object({ id: z.string().uuid() })
+      .safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid id' });
 
     const body = patchBody.safeParse(request.body);
     if (!body.success) {
-      return reply.code(400).send({ error: 'Invalid body', detail: body.error.issues });
+      return reply
+        .code(400)
+        .send({ error: 'Invalid body', detail: body.error.issues });
     }
 
     const updated = await db
@@ -68,7 +74,9 @@ export default async function gearRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.delete('/gear/:id', async (request, reply) => {
-    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const params = z
+      .object({ id: z.string().uuid() })
+      .safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid id' });
 
     const deleted = await db

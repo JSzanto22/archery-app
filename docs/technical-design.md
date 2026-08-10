@@ -17,57 +17,57 @@ All tables use **client-generated UUID** primary keys (so offline-created rows s
 
 ### `users`
 
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID (PK) | mirrors Cognito `sub` |
-| email | TEXT UNIQUE NOT NULL | |
-| display_name | TEXT | |
+| Column           | Type                           | Notes                              |
+| ---------------- | ------------------------------ | ---------------------------------- |
+| id               | UUID (PK)                      | mirrors Cognito `sub`              |
+| email            | TEXT UNIQUE NOT NULL           |                                    |
+| display_name     | TEXT                           |                                    |
 | research_consent | BOOLEAN NOT NULL DEFAULT false | consent for research/analytics use |
-| created_at | TIMESTAMPTZ NOT NULL | |
-| updated_at | TIMESTAMPTZ NOT NULL | |
+| created_at       | TIMESTAMPTZ NOT NULL           |                                    |
+| updated_at       | TIMESTAMPTZ NOT NULL           |                                    |
 
-*Auth methods (Google/Apple/email) are managed by Cognito, not stored here — Cognito is the source of truth for identity.*
+_Auth methods (Google/Apple/email) are managed by Cognito, not stored here — Cognito is the source of truth for identity._
 
 ### `gear_profiles`
 
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID (PK) | |
-| owner_id | UUID (FK → users.id) NOT NULL | |
-| name | TEXT NOT NULL | e.g. "Hoyt recurve setup" |
-| bow_type | TEXT | recurve / compound / barebow / etc. (nullable) |
-| notes | TEXT | |
-| created_at | TIMESTAMPTZ NOT NULL | |
-| updated_at | TIMESTAMPTZ NOT NULL | |
+| Column     | Type                          | Notes                                          |
+| ---------- | ----------------------------- | ---------------------------------------------- |
+| id         | UUID (PK)                     |                                                |
+| owner_id   | UUID (FK → users.id) NOT NULL |                                                |
+| name       | TEXT NOT NULL                 | e.g. "Hoyt recurve setup"                      |
+| bow_type   | TEXT                          | recurve / compound / barebow / etc. (nullable) |
+| notes      | TEXT                          |                                                |
+| created_at | TIMESTAMPTZ NOT NULL          |                                                |
+| updated_at | TIMESTAMPTZ NOT NULL          |                                                |
 
 ### `targets`
 
 The reusable target definition. `owner_id` NULL = shared standard preset (World Archery / Olympic); non-null = user-created custom.
 
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID (PK) | |
-| owner_id | UUID (FK → users.id) NULLABLE | NULL = shared preset |
-| name | TEXT NOT NULL | |
-| type | TEXT NOT NULL | `preset` \| `custom` |
-| base_shape | TEXT | outline shape of the physical target face (circle / rectangle / silhouette / freeform) |
-| created_at | TIMESTAMPTZ NOT NULL | |
-| updated_at | TIMESTAMPTZ NOT NULL | |
+| Column     | Type                          | Notes                                                                                  |
+| ---------- | ----------------------------- | -------------------------------------------------------------------------------------- |
+| id         | UUID (PK)                     |                                                                                        |
+| owner_id   | UUID (FK → users.id) NULLABLE | NULL = shared preset                                                                   |
+| name       | TEXT NOT NULL                 |                                                                                        |
+| type       | TEXT NOT NULL                 | `preset` \| `custom`                                                                   |
+| base_shape | TEXT                          | outline shape of the physical target face (circle / rectangle / silhouette / freeform) |
+| created_at | TIMESTAMPTZ NOT NULL          |                                                                                        |
+| updated_at | TIMESTAMPTZ NOT NULL          |                                                                                        |
 
 ### `target_zones`
 
 The scoring zones for a target, one row per zone. Built from **shape primitives** (circle, rectangle, polygon, etc.) rather than raw point-clouds — a circle stores center+radius, an irregular zone stores an ordered polygon. This keeps data light while supporting arbitrary targets (deer, box, silhouette).
 
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID (PK) | |
-| target_id | UUID (FK → targets.id) NOT NULL | |
-| zone_index | INT NOT NULL | ordering / layering (inner zones checked first) |
-| score_value | INT NOT NULL | points awarded for a hit in this zone |
-| shape_type | TEXT NOT NULL | `circle` \| `ellipse` \| `rectangle` \| `polygon` |
-| shape_params | JSONB NOT NULL | geometry, normalized 0–1 to the target face — see below |
-| created_at | TIMESTAMPTZ NOT NULL | |
-| updated_at | TIMESTAMPTZ NOT NULL | |
+| Column       | Type                            | Notes                                                   |
+| ------------ | ------------------------------- | ------------------------------------------------------- |
+| id           | UUID (PK)                       |                                                         |
+| target_id    | UUID (FK → targets.id) NOT NULL |                                                         |
+| zone_index   | INT NOT NULL                    | ordering / layering (inner zones checked first)         |
+| score_value  | INT NOT NULL                    | points awarded for a hit in this zone                   |
+| shape_type   | TEXT NOT NULL                   | `circle` \| `ellipse` \| `rectangle` \| `polygon`       |
+| shape_params | JSONB NOT NULL                  | geometry, normalized 0–1 to the target face — see below |
+| created_at   | TIMESTAMPTZ NOT NULL            |                                                         |
+| updated_at   | TIMESTAMPTZ NOT NULL            |                                                         |
 
 **`shape_params` by `shape_type` (all coordinates normalized 0–1):**
 
@@ -80,51 +80,51 @@ Scoring an arrow = test its (x,y) against zones in `zone_index` order (innermost
 
 ### `sessions`
 
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID (PK) | |
-| owner_id | UUID (FK → users.id) NOT NULL | |
-| shot_at | TIMESTAMPTZ NOT NULL | when the session took place |
-| distance_m | NUMERIC | shooting distance in meters (nullable) |
-| gear_profile_id | UUID (FK → gear_profiles.id) NULLABLE | saved gear, OR use the free-text tag |
-| equipment_tag | TEXT | free-text alternative to a gear profile |
-| location | TEXT | optional |
-| notes | TEXT | optional |
-| sync_status | TEXT NOT NULL | `pending` \| `synced` |
-| created_at | TIMESTAMPTZ NOT NULL | |
-| updated_at | TIMESTAMPTZ NOT NULL | |
+| Column          | Type                                  | Notes                                   |
+| --------------- | ------------------------------------- | --------------------------------------- |
+| id              | UUID (PK)                             |                                         |
+| owner_id        | UUID (FK → users.id) NOT NULL         |                                         |
+| shot_at         | TIMESTAMPTZ NOT NULL                  | when the session took place             |
+| distance_m      | NUMERIC                               | shooting distance in meters (nullable)  |
+| gear_profile_id | UUID (FK → gear_profiles.id) NULLABLE | saved gear, OR use the free-text tag    |
+| equipment_tag   | TEXT                                  | free-text alternative to a gear profile |
+| location        | TEXT                                  | optional                                |
+| notes           | TEXT                                  | optional                                |
+| sync_status     | TEXT NOT NULL                         | `pending` \| `synced`                   |
+| created_at      | TIMESTAMPTZ NOT NULL                  |                                         |
+| updated_at      | TIMESTAMPTZ NOT NULL                  |                                         |
 
 ### `rounds`
 
 One board within a session.
 
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID (PK) | |
-| session_id | UUID (FK → sessions.id) NOT NULL | |
-| target_id | UUID (FK → targets.id) NOT NULL | which target this board used |
-| round_order | INT NOT NULL | position within the session |
-| photo_key | TEXT | S3 object key; NULL if no photo (manual entry) |
-| sync_status | TEXT NOT NULL | `pending` \| `synced` |
-| created_at | TIMESTAMPTZ NOT NULL | |
-| updated_at | TIMESTAMPTZ NOT NULL | |
+| Column      | Type                             | Notes                                          |
+| ----------- | -------------------------------- | ---------------------------------------------- |
+| id          | UUID (PK)                        |                                                |
+| session_id  | UUID (FK → sessions.id) NOT NULL |                                                |
+| target_id   | UUID (FK → targets.id) NOT NULL  | which target this board used                   |
+| round_order | INT NOT NULL                     | position within the session                    |
+| photo_key   | TEXT                             | S3 object key; NULL if no photo (manual entry) |
+| sync_status | TEXT NOT NULL                    | `pending` \| `synced`                          |
+| created_at  | TIMESTAMPTZ NOT NULL             |                                                |
+| updated_at  | TIMESTAMPTZ NOT NULL             |                                                |
 
 ### `arrows`
 
 One mark within a round. Free-form count.
 
-| Column | Type | Notes |
-|---|---|---|
-| id | UUID (PK) | |
-| round_id | UUID (FK → rounds.id) NOT NULL | |
-| x | NUMERIC NOT NULL | normalized 0–1 on the target face |
-| y | NUMERIC NOT NULL | normalized 0–1 on the target face |
-| score_value | INT NOT NULL | resolved zone score at mark time (stored because it depends on the target definition *as it was*; recomputable but cheap to persist) |
-| shot_order | INT | order within the round (nullable) |
-| created_at | TIMESTAMPTZ NOT NULL | |
-| updated_at | TIMESTAMPTZ NOT NULL | |
+| Column      | Type                           | Notes                                                                                                                                |
+| ----------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| id          | UUID (PK)                      |                                                                                                                                      |
+| round_id    | UUID (FK → rounds.id) NOT NULL |                                                                                                                                      |
+| x           | NUMERIC NOT NULL               | normalized 0–1 on the target face                                                                                                    |
+| y           | NUMERIC NOT NULL               | normalized 0–1 on the target face                                                                                                    |
+| score_value | INT NOT NULL                   | resolved zone score at mark time (stored because it depends on the target definition _as it was_; recomputable but cheap to persist) |
+| shot_order  | INT                            | order within the round (nullable)                                                                                                    |
+| created_at  | TIMESTAMPTZ NOT NULL           |                                                                                                                                      |
+| updated_at  | TIMESTAMPTZ NOT NULL           |                                                                                                                                      |
 
-*Note: `score_value` is the one lightly-denormalized field — it's the resolved zone result, kept so historical scores stay stable even if a custom target is later edited. `x`/`y` remain the raw truth; distance-from-center and grouping are computed on-device, never stored.*
+_Note: `score_value` is the one lightly-denormalized field — it's the resolved zone result, kept so historical scores stay stable even if a custom target is later edited. `x`/`y` remain the raw truth; distance-from-center and grouping are computed on-device, never stored._
 
 ### Relationship summary
 
@@ -155,7 +155,7 @@ REST over API Gateway → Lambda. All endpoints (except health) require a valid 
 
 ### Auth
 
-Auth itself is handled by Cognito (hosted UI / SDK), not custom endpoints. The backend only *validates* Cognito-issued tokens.
+Auth itself is handled by Cognito (hosted UI / SDK), not custom endpoints. The backend only _validates_ Cognito-issued tokens.
 
 - `GET /me` — return the current user's profile (creates the `users` row on first call if absent)
 - `PATCH /me` — update display name, research_consent
@@ -261,17 +261,17 @@ What data each screen must have available — not layout, just the information c
 
 ## Part 4 — Cloud Technologies & Backend Integration
 
-| Technology | Role | Integration point |
-|---|---|---|
-| **AWS Cognito** | Authentication (email/password + Google + Apple OAuth); issues JWTs | Mobile app authenticates via Cognito SDK/hosted UI; **API Gateway uses a Cognito Authorizer** to validate the JWT on every protected endpoint; backend reads user id from the verified token (`sub`) |
-| **API Gateway** | HTTP entry point / routing / auth enforcement | Fronts all Lambda functions; Cognito authorizer attached; CORS configured for the app |
-| **AWS Lambda** | Backend compute (the endpoints above) | Invoked by API Gateway; connects to RDS; issues S3 pre-signed URLs |
-| **Amazon RDS (Postgres)** | Durable relational store (all schemas in Part 1) | Lambda connects via RDS Proxy (pooled connections, since Lambda scales horizontally) |
-| **Amazon S3** | Round photo storage | App uploads **directly** via pre-signed URLs from Lambda; DB stores only the `photo_key`; never store image bytes in Postgres |
-| **RDS Proxy** | Connection pooling for Lambda↔Postgres | Prevents connection exhaustion under Lambda concurrency |
-| **CloudWatch** | Logging / metrics / alarms | Lambda + API Gateway emit logs/metrics; alarms on errors/latency |
-| **AWS Amplify (optional)** | Client SDK convenience | Simplifies Cognito auth + API calls from React Native (optional; can use raw SDKs instead) |
-| **On-device: WatermelonDB** | Local source of truth, offline capture | Mirrors the Postgres schema; syncs via `/sync/push` + `/sync/pull` |
+| Technology                  | Role                                                                | Integration point                                                                                                                                                                                    |
+| --------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **AWS Cognito**             | Authentication (email/password + Google + Apple OAuth); issues JWTs | Mobile app authenticates via Cognito SDK/hosted UI; **API Gateway uses a Cognito Authorizer** to validate the JWT on every protected endpoint; backend reads user id from the verified token (`sub`) |
+| **API Gateway**             | HTTP entry point / routing / auth enforcement                       | Fronts all Lambda functions; Cognito authorizer attached; CORS configured for the app                                                                                                                |
+| **AWS Lambda**              | Backend compute (the endpoints above)                               | Invoked by API Gateway; connects to RDS; issues S3 pre-signed URLs                                                                                                                                   |
+| **Amazon RDS (Postgres)**   | Durable relational store (all schemas in Part 1)                    | Lambda connects via RDS Proxy (pooled connections, since Lambda scales horizontally)                                                                                                                 |
+| **Amazon S3**               | Round photo storage                                                 | App uploads **directly** via pre-signed URLs from Lambda; DB stores only the `photo_key`; never store image bytes in Postgres                                                                        |
+| **RDS Proxy**               | Connection pooling for Lambda↔Postgres                              | Prevents connection exhaustion under Lambda concurrency                                                                                                                                              |
+| **CloudWatch**              | Logging / metrics / alarms                                          | Lambda + API Gateway emit logs/metrics; alarms on errors/latency                                                                                                                                     |
+| **AWS Amplify (optional)**  | Client SDK convenience                                              | Simplifies Cognito auth + API calls from React Native (optional; can use raw SDKs instead)                                                                                                           |
+| **On-device: WatermelonDB** | Local source of truth, offline capture                              | Mirrors the Postgres schema; syncs via `/sync/push` + `/sync/pull`                                                                                                                                   |
 
 ### Environments
 

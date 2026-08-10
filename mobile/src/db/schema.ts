@@ -74,7 +74,12 @@ export default appSchema({
       columns: [
         { name: 'shot_at', type: 'number', isIndexed: true },
         { name: 'distance_m', type: 'number', isOptional: true },
-        { name: 'gear_profile_id', type: 'string', isOptional: true, isIndexed: true },
+        {
+          name: 'gear_profile_id',
+          type: 'string',
+          isOptional: true,
+          isIndexed: true,
+        },
         { name: 'equipment_tag', type: 'string', isOptional: true },
         { name: 'location', type: 'string', isOptional: true },
         { name: 'notes', type: 'string', isOptional: true },

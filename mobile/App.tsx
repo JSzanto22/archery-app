@@ -33,7 +33,7 @@ export default function App() {
   });
 
   useEffect(() => {
-    (async () => {
+    void (async () => {
       try {
         // Bundled World Archery faces must exist before the first session can
         // be scored, and must not depend on having reached the network.
@@ -98,5 +98,10 @@ export default function App() {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  centre: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  centre: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
 });

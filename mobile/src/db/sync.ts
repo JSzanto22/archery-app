@@ -175,7 +175,7 @@ export async function runSync(options: SyncOptions): Promise<void> {
           lastPulledAt: lastPulledAt
             ? new Date(lastPulledAt).toISOString()
             : null,
-          changes: mapChanges(changes as unknown as WireChanges, toWire),
+          changes: mapChanges(changes, toWire),
         }),
       });
     },

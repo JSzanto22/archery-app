@@ -34,8 +34,6 @@ import {
   toRestorable,
 } from '../actions';
 import { collections, database } from '../index';
-import Arrow from '../models/Arrow';
-import Round from '../models/Round';
 import Target from '../models/Target';
 import TargetZone from '../models/TargetZone';
 

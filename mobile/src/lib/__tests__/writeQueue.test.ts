@@ -121,14 +121,16 @@ describe('createWriteQueue', () => {
     const queue = createWriteQueue();
     let settled = false;
 
-    const pushed = queue.push({
-      run: async () => {
-        await gate.promise;
-      },
-      failureMessage: 'x',
-    }).then(() => {
-      settled = true;
-    });
+    const pushed = queue
+      .push({
+        run: async () => {
+          await gate.promise;
+        },
+        failureMessage: 'x',
+      })
+      .then(() => {
+        settled = true;
+      });
 
     expect(settled).toBe(false);
     gate.resolve();

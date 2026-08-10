@@ -192,7 +192,10 @@ describe('GET /targets', () => {
     expect(zones).toHaveLength(15);
     expect(zones[0]!.shapeType).toBe('ellipse');
     // The 40 x 120 cm face squashes y to a third of x.
-    expect(zones[0]!.shapeParams.ry).toBeCloseTo(zones[0]!.shapeParams.rx / 3, 5);
+    expect(zones[0]!.shapeParams.ry).toBeCloseTo(
+      zones[0]!.shapeParams.rx / 3,
+      5,
+    );
   });
 });
 
@@ -257,7 +260,10 @@ describe('POST /sessions', () => {
   });
 
   it('round-trips coordinates and distance without losing precision', async () => {
-    const res = await app.inject({ method: 'GET', url: `/sessions/${ids.session}` });
+    const res = await app.inject({
+      method: 'GET',
+      url: `/sessions/${ids.session}`,
+    });
     expect(res.statusCode).toBe(200);
 
     const body = res.json();
@@ -271,7 +277,7 @@ describe('POST /sessions', () => {
 });
 
 describe('ownership', () => {
-  it('does not list another user\'s sessions', async () => {
+  it("does not list another user's sessions", async () => {
     const res = await app.inject({ method: 'GET', url: '/sessions' });
     expect(res.statusCode).toBe(200);
 
@@ -280,7 +286,7 @@ describe('ownership', () => {
     expect(body.some((s) => s.id === ids.otherSession)).toBe(false);
   });
 
-  it('returns 404, not 403, for another user\'s session', async () => {
+  it("returns 404, not 403, for another user's session", async () => {
     // 403 would confirm the id exists. 404 tells the caller nothing.
     const res = await app.inject({
       method: 'GET',
@@ -289,7 +295,7 @@ describe('ownership', () => {
     expect(res.statusCode).toBe(404);
   });
 
-  it('will not delete another user\'s session', async () => {
+  it("will not delete another user's session", async () => {
     const res = await app.inject({
       method: 'DELETE',
       url: `/sessions/${ids.otherSession}`,
@@ -376,7 +382,10 @@ describe('custom targets', () => {
   });
 
   it('refuses to delete a target that has recorded rounds', async () => {
-    const res = await app.inject({ method: 'DELETE', url: `/targets/${WA_122}` });
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/targets/${WA_122}`,
+    });
     // A preset is not owned, so this is a 404 before the FK is ever reached.
     expect(res.statusCode).toBe(404);
   });
@@ -412,7 +421,7 @@ describe('PUT /rounds/:id/arrows', () => {
 });
 
 describe('GET /sync/pull', () => {
-  it('returns every table in the client\'s column names', async () => {
+  it("returns every table in the client's column names", async () => {
     const res = await app.inject({ method: 'GET', url: '/sync/pull' });
     expect(res.statusCode).toBe(200);
 
@@ -441,9 +450,11 @@ describe('GET /sync/pull', () => {
     expect(session.sync_status).toBeUndefined();
 
     // shape_params must be a string: SQLite has no JSON type.
-    const zone = body.changes.target_zones.created[0];
+    const zone = body.changes.target_zones.created[0] as {
+      shape_params: string;
+    };
     expect(typeof zone.shape_params).toBe('string');
-    expect(() => JSON.parse(zone.shape_params)).not.toThrow();
+    expect(() => JSON.parse(zone.shape_params) as unknown).not.toThrow();
   });
 
   it('round-trips face geometry instead of nulling it', async () => {
@@ -602,7 +613,7 @@ describe('POST /sync/push', () => {
     expect(check.json().location).toBe('Newer wins');
   });
 
-  it('accepts an arrow that reuses a deleted arrow\'s shot number', async () => {
+  it("accepts an arrow that reuses a deleted arrow's shot number", async () => {
     // The archer deletes the second arrow of an end and shoots another. The
     // replacement really is the second arrow, so the client reuses shot_order
     // 2 — but the deleted row still holds (round_id, shot_order) until its
@@ -676,7 +687,7 @@ describe('POST /sync/push', () => {
     expect(remaining[0]!.shotOrder).toBe(2);
   });
 
-  it('ignores a push aimed at another user\'s session', async () => {
+  it("ignores a push aimed at another user's session", async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/sync/push',

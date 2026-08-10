@@ -76,10 +76,16 @@ describe('bundled presets', () => {
   });
 
   it('ships the expected ring counts', () => {
-    expect(findPreset('00000000-0000-4000-8000-000000000101')!.zones).toHaveLength(10);
-    expect(findPreset('00000000-0000-4000-8000-000000000103')!.zones).toHaveLength(6);
+    expect(
+      findPreset('00000000-0000-4000-8000-000000000101')!.zones,
+    ).toHaveLength(10);
+    expect(
+      findPreset('00000000-0000-4000-8000-000000000103')!.zones,
+    ).toHaveLength(6);
     // Five rings across three spots.
-    expect(findPreset('00000000-0000-4000-8000-000000000104')!.zones).toHaveLength(15);
+    expect(
+      findPreset('00000000-0000-4000-8000-000000000104')!.zones,
+    ).toHaveLength(15);
   });
 
   it('carries physical dimensions for every face', () => {

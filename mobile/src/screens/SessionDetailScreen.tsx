@@ -97,7 +97,7 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
   }, [sessionId]);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   if (!session) {
@@ -214,7 +214,7 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
             tone="error"
             message={`Delete this session and its ${plural(arrowCount, 'arrow')}? This cannot be undone.`}
             actionLabel={deleting ? 'Deleting…' : 'Delete'}
-            onAction={onDelete}
+            onAction={() => void onDelete()}
             onDismiss={() => setConfirmingDelete(false)}
           />
         ) : (

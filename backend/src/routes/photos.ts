@@ -7,7 +7,11 @@
  * latency for no benefit.
  */
 
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { and, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
@@ -69,7 +73,11 @@ export default async function photoRoutes(app: FastifyInstance): Promise<void> {
       { expiresIn: env.PRESIGNED_URL_TTL_SECONDS },
     );
 
-    return { uploadUrl: url, photoKey: key, expiresIn: env.PRESIGNED_URL_TTL_SECONDS };
+    return {
+      uploadUrl: url,
+      photoKey: key,
+      expiresIn: env.PRESIGNED_URL_TTL_SECONDS,
+    };
   });
 
   app.get('/rounds/:id/photo-url', async (request, reply) => {
@@ -81,7 +89,8 @@ export default async function photoRoutes(app: FastifyInstance): Promise<void> {
 
     const round = await findOwnedRound(parsed.data.id, request.userId);
     if (!round) return reply.code(404).send({ error: 'Not found' });
-    if (!round.photoKey) return reply.code(404).send({ error: 'No photo for this round' });
+    if (!round.photoKey)
+      return reply.code(404).send({ error: 'No photo for this round' });
 
     const url = await getSignedUrl(
       s3,
@@ -105,7 +114,9 @@ export default async function photoRoutes(app: FastifyInstance): Promise<void> {
       .safeParse(request.body);
 
     if (!body.success) {
-      return reply.code(400).send({ error: 'Invalid body', detail: body.error.issues });
+      return reply
+        .code(400)
+        .send({ error: 'Invalid body', detail: body.error.issues });
     }
 
     const round = await findOwnedRound(parsed.data.id, request.userId);

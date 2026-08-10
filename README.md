@@ -24,26 +24,26 @@ archery-app/
 └── README.md
 ```
 
-| Directory | Purpose |
-| --- | --- |
-| [`mobile/`](mobile/) | Client app. Local source of truth, all scoring and analytics. |
-| [`backend/`](backend/) | Serverless API, Postgres persistence, photo storage. |
-| [`ml/`](ml/) | Computer-vision arrow detection. Phase 2+. |
-| [`docs/`](docs/) | Design docs, decision records, failure logs. |
+| Directory              | Purpose                                                       |
+| ---------------------- | ------------------------------------------------------------- |
+| [`mobile/`](mobile/)   | Client app. Local source of truth, all scoring and analytics. |
+| [`backend/`](backend/) | Serverless API, Postgres persistence, photo storage.          |
+| [`ml/`](ml/)           | Computer-vision arrow detection. Phase 2+.                    |
+| [`docs/`](docs/)       | Design docs, decision records, failure logs.                  |
 
 Each directory has its own `README.md` describing what belongs there.
 
 ## Stack
 
-| Layer | Choice |
-| --- | --- |
-| Client | React Native |
-| Local store | WatermelonDB (mirrors the Postgres schema, syncs via push/pull) |
-| Auth | AWS Cognito (email/password, Google, Apple) |
-| API | API Gateway + Lambda, Cognito authorizer |
-| Database | Amazon RDS Postgres, via RDS Proxy |
-| Media | S3, direct upload via pre-signed URLs |
-| Observability | CloudWatch |
+| Layer         | Choice                                                          |
+| ------------- | --------------------------------------------------------------- |
+| Client        | React Native                                                    |
+| Local store   | WatermelonDB (mirrors the Postgres schema, syncs via push/pull) |
+| Auth          | AWS Cognito (email/password, Google, Apple)                     |
+| API           | API Gateway + Lambda, Cognito authorizer                        |
+| Database      | Amazon RDS Postgres, via RDS Proxy                              |
+| Media         | S3, direct upload via pre-signed URLs                           |
+| Observability | CloudWatch                                                      |
 
 ## Data model at a glance
 
@@ -88,13 +88,13 @@ Details in each directory's README.
 
 ## Status
 
-| Area | State |
-| --- | --- |
-| Postgres schema, presets, seeded demo data, Docker | Done |
-| Scoring and grouping (device) | Done, 26 tests |
-| Mobile: dashboard, new session, marking, session detail | Done |
-| Backend: profile, gear, targets, sessions, arrows, photos, sync | Done, 21 tests |
-| Mobile sync client | Written, not yet run against the server |
-| Auth (Cognito), photo upload, target builder, gear screens | Not started |
-| Infrastructure as code — nothing deploys to AWS yet | Not started |
-| Phase 2: CV arrow detection | Not started |
+| Area                                                            | State                                   |
+| --------------------------------------------------------------- | --------------------------------------- |
+| Postgres schema, presets, seeded demo data, Docker              | Done                                    |
+| Scoring and grouping (device)                                   | Done, 26 tests                          |
+| Mobile: dashboard, new session, marking, session detail         | Done                                    |
+| Backend: profile, gear, targets, sessions, arrows, photos, sync | Done, 21 tests                          |
+| Mobile sync client                                              | Written, not yet run against the server |
+| Auth (Cognito), photo upload, target builder, gear screens      | Not started                             |
+| Infrastructure as code — nothing deploys to AWS yet             | Not started                             |
+| Phase 2: CV arrow detection                                     | Not started                             |

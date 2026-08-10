@@ -20,7 +20,9 @@ export default schemaMigrations({
       steps: [
         addColumns({
           table: 'targets',
-          columns: [{ name: 'face_width_cm', type: 'number', isOptional: true }],
+          columns: [
+            { name: 'face_width_cm', type: 'number', isOptional: true },
+          ],
         }),
       ],
     },

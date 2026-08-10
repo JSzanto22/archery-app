@@ -17,7 +17,10 @@ const zoneInput = z.object({
 const createBody = z.object({
   id: z.string().uuid(),
   name: z.string().trim().min(1).max(120),
-  baseShape: z.enum(['circle', 'rectangle', 'silhouette', 'freeform']).nullable().optional(),
+  baseShape: z
+    .enum(['circle', 'rectangle', 'silhouette', 'freeform'])
+    .nullable()
+    .optional(),
   /** faceWidth / faceHeight. Rejected at zero — it divides in the client. */
   aspectRatio: z.number().positive().max(100).nullable().optional(),
   /** Physical width in centimetres. A face wider than 5 m is a typo. */
@@ -25,7 +28,9 @@ const createBody = z.object({
   zones: z.array(zoneInput).min(1),
 });
 
-export default async function targetRoutes(app: FastifyInstance): Promise<void> {
+export default async function targetRoutes(
+  app: FastifyInstance,
+): Promise<void> {
   app.addHook('preHandler', requireAuth);
 
   /** Shared presets (owner NULL) plus this user's custom targets, with zones. */
@@ -65,7 +70,9 @@ export default async function targetRoutes(app: FastifyInstance): Promise<void> 
   });
 
   app.get('/targets/:id', async (request, reply) => {
-    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const params = z
+      .object({ id: z.string().uuid() })
+      .safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid id' });
 
     const rows = await db
@@ -96,7 +103,9 @@ export default async function targetRoutes(app: FastifyInstance): Promise<void> 
   app.post('/targets', async (request, reply) => {
     const body = createBody.safeParse(request.body);
     if (!body.success) {
-      return reply.code(400).send({ error: 'Invalid body', detail: body.error.issues });
+      return reply
+        .code(400)
+        .send({ error: 'Invalid body', detail: body.error.issues });
     }
 
     const { zones, aspectRatio, faceWidthCm, ...target } = body.data;
@@ -127,12 +136,19 @@ export default async function targetRoutes(app: FastifyInstance): Promise<void> 
   });
 
   app.patch('/targets/:id', async (request, reply) => {
-    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const params = z
+      .object({ id: z.string().uuid() })
+      .safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid id' });
 
-    const body = createBody.partial().omit({ id: true }).safeParse(request.body);
+    const body = createBody
+      .partial()
+      .omit({ id: true })
+      .safeParse(request.body);
     if (!body.success) {
-      return reply.code(400).send({ error: 'Invalid body', detail: body.error.issues });
+      return reply
+        .code(400)
+        .send({ error: 'Invalid body', detail: body.error.issues });
     }
 
     const { zones, aspectRatio, faceWidthCm, ...rest } = body.data;
@@ -149,7 +165,10 @@ export default async function targetRoutes(app: FastifyInstance): Promise<void> 
       .select({ id: targets.id })
       .from(targets)
       .where(
-        and(eq(targets.id, params.data.id), eq(targets.ownerId, request.userId)),
+        and(
+          eq(targets.id, params.data.id),
+          eq(targets.ownerId, request.userId),
+        ),
       )
       .limit(1);
 
@@ -167,7 +186,9 @@ export default async function targetRoutes(app: FastifyInstance): Promise<void> 
       // Replace wholesale. Diffing zone-by-zone would need stable identity for
       // a shape the builder lets you drag, split and delete freely; replacing
       // is both simpler and matches what the editor actually produces.
-      await tx.delete(targetZones).where(eq(targetZones.targetId, params.data.id));
+      await tx
+        .delete(targetZones)
+        .where(eq(targetZones.targetId, params.data.id));
 
       const newZones = await tx
         .insert(targetZones)
@@ -181,7 +202,9 @@ export default async function targetRoutes(app: FastifyInstance): Promise<void> 
   });
 
   app.delete('/targets/:id', async (request, reply) => {
-    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const params = z
+      .object({ id: z.string().uuid() })
+      .safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid id' });
 
     try {
@@ -202,7 +225,8 @@ export default async function targetRoutes(app: FastifyInstance): Promise<void> 
       // cannot be removed. That is a 409, not a 500.
       if (isForeignKeyViolation(error)) {
         return reply.code(409).send({
-          error: 'Target is still used by recorded rounds and cannot be deleted.',
+          error:
+            'Target is still used by recorded rounds and cannot be deleted.',
         });
       }
       throw error;

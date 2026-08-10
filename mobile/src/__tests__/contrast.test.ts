@@ -69,13 +69,15 @@ describe.each(['light', 'dark'] as const)('%s palette', (mode) => {
   });
 
   it('labels on the filled button meet AA', () => {
-    expect(contrastRatio(p.onAccent, p.accent)).toBeGreaterThanOrEqual(TEXT_MIN);
+    expect(contrastRatio(p.onAccent, p.accent)).toBeGreaterThanOrEqual(
+      TEXT_MIN,
+    );
   });
 
   it('labels on the tonal button meet AA', () => {
-    expect(contrastRatio(p.onAccentTonal, p.accentTonal)).toBeGreaterThanOrEqual(
-      TEXT_MIN,
-    );
+    expect(
+      contrastRatio(p.onAccentTonal, p.accentTonal),
+    ).toBeGreaterThanOrEqual(TEXT_MIN);
   });
 
   it('chart series are distinguishable from their surface', () => {

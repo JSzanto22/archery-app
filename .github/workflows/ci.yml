@@ -1,0 +1,120 @@
+# Continuous integration.
+#
+# Until this existed, nothing verified the repo except someone remembering to.
+# Two of the bugs in this project's history — a sync path with no caller, photo
+# upload that never uploaded — survived precisely because the checks that would
+# have caught them were never run automatically.
+#
+# The backend suite talks to a real Postgres and a real S3 rather than mocks,
+# so CI provides both as services. That is the whole point: the failures worth
+# catching are constraint violations and payload-shape mismatches, which a
+# stubbed database reports as passing.
+
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+# A newer push makes an in-flight run redundant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint, format and types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Each package keeps its own dependencies; the root holds only tooling.
+      - run: npm ci
+      - run: npm ci --prefix mobile
+      - run: npm ci --prefix backend
+
+      - name: Prettier
+        run: npm run format:check
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: TypeScript
+        run: npm run typecheck
+
+  mobile-tests:
+    name: Mobile tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --prefix mobile
+      - run: npm test --prefix mobile
+
+  backend-tests:
+    name: Backend tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: archery
+          POSTGRES_USER: archery
+          POSTGRES_PASSWORD: archery_dev
+        ports: ['5432:5432']
+        # Without this the suite starts before Postgres accepts connections and
+        # every test "skips" on a connection error, which reads far too much
+        # like a pass.
+        options: >-
+          --health-cmd "pg_isready -U archery -d archery"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+      minio:
+        image: bitnami/minio:latest
+        env:
+          MINIO_ROOT_USER: archery
+          MINIO_ROOT_PASSWORD: archery_dev_secret
+          MINIO_DEFAULT_BUCKETS: archery-photos
+        ports: ['9000:9000']
+
+    env:
+      DATABASE_URL: postgresql://archery:archery_dev@localhost:5432/archery
+      NODE_ENV: test
+      DEV_USER_ID: 22222222-2222-4222-8222-000000000000
+      S3_BUCKET: archery-photos
+      S3_ENDPOINT: http://localhost:9000
+      S3_ACCESS_KEY: archery
+      S3_SECRET_KEY: archery_dev_secret
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --prefix backend
+
+      # The schema is applied by the same files docker-compose mounts, in the
+      # same order, so CI and a developer's machine cannot drift apart.
+      - name: Apply schema and seed
+        run: |
+          for f in backend/db/migrations/0001_init.sql \
+                   backend/db/seeds/0001_preset_targets.sql \
+                   backend/db/migrations/0002_target_face_dimensions.sql; do
+            echo "applying $f"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - run: npm test --prefix backend

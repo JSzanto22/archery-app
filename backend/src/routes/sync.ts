@@ -82,7 +82,9 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
   app.get('/sync/pull', async (request, reply) => {
     const query = pullQuery.safeParse(request.query);
     if (!query.success) {
-      return reply.code(400).send({ error: 'Invalid query', detail: query.error.issues });
+      return reply
+        .code(400)
+        .send({ error: 'Invalid query', detail: query.error.issues });
     }
 
     const since = query.data.since ? new Date(query.data.since) : null;
@@ -103,7 +105,12 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
       const gear = await tx
         .select()
         .from(gearProfiles)
-        .where(and(eq(gearProfiles.ownerId, userId), changedSince(gearProfiles.updatedAt)));
+        .where(
+          and(
+            eq(gearProfiles.ownerId, userId),
+            changedSince(gearProfiles.updatedAt),
+          ),
+        );
 
       // Presets (owner NULL) belong to everyone and must reach every device.
       const targetRows = await tx
@@ -139,7 +146,9 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
       const sessionRows = await tx
         .select()
         .from(sessions)
-        .where(and(eq(sessions.ownerId, userId), changedSince(sessions.updatedAt)));
+        .where(
+          and(eq(sessions.ownerId, userId), changedSince(sessions.updatedAt)),
+        );
 
       const ownedSessions = await tx
         .select({ id: sessions.id })
@@ -269,7 +278,9 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
   app.post('/sync/push', async (request, reply) => {
     const body = pushBody.safeParse(request.body);
     if (!body.success) {
-      return reply.code(400).send({ error: 'Invalid body', detail: body.error.issues });
+      return reply
+        .code(400)
+        .send({ error: 'Invalid body', detail: body.error.issues });
     }
 
     const userId = request.userId;
@@ -437,10 +448,7 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
             zoneIndex: num(raw.zone_index),
             scoreValue: num(raw.score_value),
             shapeType: str(raw.shape_type) as
-              | 'circle'
-              | 'ellipse'
-              | 'rectangle'
-              | 'polygon',
+              'circle' | 'ellipse' | 'rectangle' | 'polygon',
             shapeParams: parseJson(raw.shape_params),
             createdAt: date(raw.created_at),
             updatedAt: date(raw.updated_at),

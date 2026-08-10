@@ -24,12 +24,7 @@ import {
 import { useAuth } from '../auth/AuthProvider';
 import { seedDemoData } from '../db/devSeed';
 import { useDashboardData } from '../hooks/useDashboardData';
-import {
-  formatDate,
-  formatPercent,
-  formatTime,
-  plural,
-} from '../lib/format';
+import { formatDate, formatPercent, formatTime, plural } from '../lib/format';
 import { useSync } from '../sync/useSync';
 import { RootStackParamList } from '../navigation';
 import { radius, spacing, type, usePalette } from '../theme';
@@ -408,7 +403,7 @@ export default function DashboardScreen({ navigation }: Props) {
                     label={seeding ? 'Loading…' : 'Load demo data'}
                     variant="tonal"
                     disabled={seeding}
-                    onPress={onSeedDemo}
+                    onPress={() => void onSeedDemo()}
                   />
                 </View>
               ) : null}
@@ -420,14 +415,26 @@ export default function DashboardScreen({ navigation }: Props) {
                 ]}
               >
                 <View
-                  style={[styles.emptyRingInner, { borderColor: palette.gridline }]}
+                  style={[
+                    styles.emptyRingInner,
+                    { borderColor: palette.gridline },
+                  ]}
                 >
                   <View
-                    style={[styles.emptyBull, { backgroundColor: palette.accent }]}
+                    style={[
+                      styles.emptyBull,
+                      { backgroundColor: palette.accent },
+                    ]}
                   />
                 </View>
               </View>
-              <Text style={[type.body, styles.emptyTitle, { color: palette.textSecondary }]}>
+              <Text
+                style={[
+                  type.body,
+                  styles.emptyTitle,
+                  { color: palette.textSecondary },
+                ]}
+              >
                 No arrows loosed yet.
               </Text>
               <Text
@@ -492,7 +499,6 @@ function SessionRow({
     />
   );
 }
-
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },

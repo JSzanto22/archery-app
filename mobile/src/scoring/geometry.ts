@@ -45,10 +45,7 @@ export interface PolygonParams {
 }
 
 export type ShapeParams =
-  | CircleParams
-  | EllipseParams
-  | RectangleParams
-  | PolygonParams;
+  CircleParams | EllipseParams | RectangleParams | PolygonParams;
 
 export interface Point {
   x: number;

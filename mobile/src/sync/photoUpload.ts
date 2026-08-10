@@ -82,7 +82,10 @@ export async function uploadPendingPhotos(
   }
 
   const remaining = await collections.rounds
-    .query(Q.where('local_photo_uri', Q.notEq(null)), Q.where('photo_key', null))
+    .query(
+      Q.where('local_photo_uri', Q.notEq(null)),
+      Q.where('photo_key', null),
+    )
     .fetchCount();
 
   return { uploaded, failed, remaining };

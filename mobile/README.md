@@ -71,14 +71,14 @@ The end-to-end slice: create a session → mark arrows on the face → live scor
 and grouping → save locally → review the session → see it on the dashboard.
 Everything works with no network and no backend.
 
-| Area | State |
-| --- | --- |
-| Scoring geometry (circle / ellipse / rectangle / polygon, rotation) | Done, 26 tests |
-| Grouping, accuracy offset, heat-map grid | Done |
-| Local store, WatermelonDB models, bundled presets | Done |
-| Dashboard, new session, marking, session detail | Done |
-| Sync client | Written, untested against a live server |
-| Auth (Cognito), photo upload to S3, target builder, gear management | Not started |
+| Area                                                                | State                                   |
+| ------------------------------------------------------------------- | --------------------------------------- |
+| Scoring geometry (circle / ellipse / rectangle / polygon, rotation) | Done, 26 tests                          |
+| Grouping, accuracy offset, heat-map grid                            | Done                                    |
+| Local store, WatermelonDB models, bundled presets                   | Done                                    |
+| Dashboard, new session, marking, session detail                     | Done                                    |
+| Sync client                                                         | Written, untested against a live server |
+| Auth (Cognito), photo upload to S3, target builder, gear management | Not started                             |
 
 ## Layout
 

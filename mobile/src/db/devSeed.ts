@@ -19,7 +19,6 @@ import { Q } from '@nozbe/watermelondb';
 
 import { scoreArrow } from '../scoring/scoring';
 import { collections, database } from './index';
-import { PRESET_TARGETS } from './presets';
 import Arrow from './models/Arrow';
 import Round from './models/Round';
 import Session from './models/Session';
@@ -93,7 +92,10 @@ export async function seedDemoData(sessionCount = 14): Promise<DevSeedResult> {
     .fetch();
 
   const targetById = new Map(targets.map((t) => [t.id, t]));
-  const zonesById = new Map<string, Awaited<ReturnType<Target['toScoringZones']>>>();
+  const zonesById = new Map<
+    string,
+    Awaited<ReturnType<Target['toScoringZones']>>
+  >();
 
   for (const target of targets) {
     zonesById.set(target.id, await target.toScoringZones());
@@ -105,7 +107,7 @@ export async function seedDemoData(sessionCount = 14): Promise<DevSeedResult> {
 
   await database.write(async () => {
     for (let i = 0; i < sessionCount; i++) {
-      const scenario = SCENARIOS[i % SCENARIOS.length]!;
+      const scenario = SCENARIOS[i % SCENARIOS.length];
       const target = targetById.get(scenario.targetId);
       const zones = zonesById.get(scenario.targetId);
       if (!target || !zones) continue;
@@ -148,8 +150,7 @@ export async function seedDemoData(sessionCount = 14): Promise<DevSeedResult> {
 
         for (let a = 1; a <= scenario.arrowsPerEnd; a++) {
           // On a multi-spot face one arrow goes in each spot.
-          const aim =
-            scenario.aimPoints[(a - 1) % scenario.aimPoints.length]!;
+          const aim = scenario.aimPoints[(a - 1) % scenario.aimPoints.length];
 
           const [z1, z2] = normalPair();
           const flyer = Math.random() < 0.06 ? 2.6 : 1;

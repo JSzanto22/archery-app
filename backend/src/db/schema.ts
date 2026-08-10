@@ -34,8 +34,12 @@ export const users = pgTable('users', {
   email: text('email').notNull().unique(),
   displayName: text('display_name'),
   researchConsent: boolean('research_consent').notNull().default(false),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
 });
 
 export const gearProfiles = pgTable(
@@ -48,8 +52,12 @@ export const gearProfiles = pgTable(
     name: text('name').notNull(),
     bowType: text('bow_type'),
     notes: text('notes'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [index('gear_profiles_owner_idx').on(t.ownerId)],
 );
@@ -59,7 +67,9 @@ export const targets = pgTable(
   {
     id: uuid('id').primaryKey(),
     /** NULL means a shared preset: readable by everyone, editable by no one. */
-    ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'cascade' }),
+    ownerId: uuid('owner_id').references(() => users.id, {
+      onDelete: 'cascade',
+    }),
     name: text('name').notNull(),
     type: text('type').$type<'preset' | 'custom'>().notNull(),
     baseShape: text('base_shape'),
@@ -75,8 +85,12 @@ export const targets = pgTable(
       scale: 2,
       mode: 'number',
     }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [index('targets_owner_idx').on(t.ownerId)],
 );
@@ -93,9 +107,15 @@ export const targetZones = pgTable(
     zoneIndex: integer('zone_index').notNull(),
     scoreValue: integer('score_value').notNull(),
     shapeType: text('shape_type').$type<ShapeType>().notNull(),
-    shapeParams: jsonb('shape_params').$type<Record<string, unknown>>().notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    shapeParams: jsonb('shape_params')
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [
     uniqueIndex('target_zones_unique_order').on(t.targetId, t.zoneIndex),
@@ -135,9 +155,16 @@ export const sessions = pgTable(
     equipmentTag: text('equipment_tag'),
     location: text('location'),
     notes: text('notes'),
-    syncStatus: text('sync_status').$type<'pending' | 'synced'>().notNull().default('pending'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    syncStatus: text('sync_status')
+      .$type<'pending' | 'synced'>()
+      .notNull()
+      .default('pending'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [
     index('sessions_owner_shot_at_idx').on(t.ownerId, t.shotAt),
@@ -158,9 +185,16 @@ export const rounds = pgTable(
     roundOrder: integer('round_order').notNull(),
     /** S3 object key. Image bytes never enter this database. */
     photoKey: text('photo_key'),
-    syncStatus: text('sync_status').$type<'pending' | 'synced'>().notNull().default('pending'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    syncStatus: text('sync_status')
+      .$type<'pending' | 'synced'>()
+      .notNull()
+      .default('pending'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [
     uniqueIndex('rounds_unique_order').on(t.sessionId, t.roundOrder),
@@ -181,8 +215,12 @@ export const arrows = pgTable(
     /** Resolved on the device at mark time. Never computed here. */
     scoreValue: integer('score_value').notNull(),
     shotOrder: integer('shot_order'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [index('arrows_round_idx').on(t.roundId)],
 );

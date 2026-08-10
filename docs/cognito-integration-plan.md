@@ -1,6 +1,6 @@
 # AWS Cognito Integration Plan
 
-*2026-08-01 — plan only; nothing has been implemented.*
+_2026-08-01 — plan only; nothing has been implemented._
 
 ## Where auth stands today
 
@@ -16,30 +16,30 @@ That is where nearly all the new work lands.
 
 ## 1. User pool (one per environment: dev / staging / prod)
 
-| Setting | Value | Why |
-| --- | --- | --- |
-| Sign-in | Email as username (case-insensitive alias) | The design's primary method |
-| Verification | Auto-send email code on sign-up | Standard; blocks typo'd addresses |
-| Required attributes | `email` only | Everything else lives in Postgres |
-| Custom attributes | **None** | `research_consent`, display name etc. are app data — queried relationally, so they belong in the `users` table (already there), not in Cognito where they'd be invisible to SQL |
-| MFA | Off for MVP | Casual-use app; revisit later |
-| Account recovery | Email | |
-| Deletion protection | On (prod only) | |
+| Setting             | Value                                      | Why                                                                                                                                                                             |
+| ------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sign-in             | Email as username (case-insensitive alias) | The design's primary method                                                                                                                                                     |
+| Verification        | Auto-send email code on sign-up            | Standard; blocks typo'd addresses                                                                                                                                               |
+| Required attributes | `email` only                               | Everything else lives in Postgres                                                                                                                                               |
+| Custom attributes   | **None**                                   | `research_consent`, display name etc. are app data — queried relationally, so they belong in the `users` table (already there), not in Cognito where they'd be invisible to SQL |
+| MFA                 | Off for MVP                                | Casual-use app; revisit later                                                                                                                                                   |
+| Account recovery    | Email                                      |                                                                                                                                                                                 |
+| Deletion protection | On (prod only)                             |                                                                                                                                                                                 |
 
 `users.id` mirrors the Cognito `sub`, as the schema already documents.
 
 ## 2. App client
 
-| Setting | Value | Why |
-| --- | --- | --- |
-| Client type | Public, **no secret** | A mobile binary cannot keep a secret |
-| Auth flow | `USER_SRP_AUTH` only | Password never transits in plaintext; do not enable `USER_PASSWORD_AUTH` or admin flows |
-| Token validity | Access 1 h · ID 1 h · Refresh 30 d | Casual users shouldn't re-login weekly; 30-day sliding refresh means sign-in roughly once a month at worst |
-| OAuth / hosted UI | Deferred (see federation below) | |
+| Setting           | Value                              | Why                                                                                                        |
+| ----------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Client type       | Public, **no secret**              | A mobile binary cannot keep a secret                                                                       |
+| Auth flow         | `USER_SRP_AUTH` only               | Password never transits in plaintext; do not enable `USER_PASSWORD_AUTH` or admin flows                    |
+| Token validity    | Access 1 h · ID 1 h · Refresh 30 d | Casual users shouldn't re-login weekly; 30-day sliding refresh means sign-in roughly once a month at worst |
+| OAuth / hosted UI | Deferred (see federation below)    |                                                                                                            |
 
 **Google/Apple federation — recommended for a later phase.** Both need external
 developer accounts (Apple's is paid), and Apple's App Store rule means that the
-moment you offer Google sign-in you are *required* to offer Sign in with Apple.
+moment you offer Google sign-in you are _required_ to offer Sign in with Apple.
 Email/password first ships auth without either dependency; federation slots in
 later via the hosted UI without changing the backend at all (tokens come from
 the same pool).
@@ -94,7 +94,7 @@ touches the network, and sync simply pauses if a refresh fails and resumes
 next time it succeeds. The alternative (anonymous local-only mode with
 account-linking later) is real work: merging a local UUID universe into an
 authenticated one deserves its own design, and the schema's client-generated
-UUIDs make it *possible* later without blocking anything now.
+UUIDs make it _possible_ later without blocking anything now.
 
 ## 5. One wrinkle worth knowing in advance
 

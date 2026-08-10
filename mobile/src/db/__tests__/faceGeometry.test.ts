@@ -50,7 +50,10 @@ describe('resolveFaceGeometry', () => {
   it('reports an unknown face as square with no width', () => {
     // Inventing a diameter would produce confident, wrong centimetre figures.
     const face = resolveFaceGeometry(
-      fakeTarget({ id: 'aaaaaaaa-0000-4000-8000-000000000001', type: 'custom' }),
+      fakeTarget({
+        id: 'aaaaaaaa-0000-4000-8000-000000000001',
+        type: 'custom',
+      }),
     );
 
     expect(face.aspectRatio).toBe(1);
@@ -60,7 +63,10 @@ describe('resolveFaceGeometry', () => {
 
   it('aims a custom face at its middle', () => {
     const face = resolveFaceGeometry(
-      fakeTarget({ id: 'aaaaaaaa-0000-4000-8000-000000000002', type: 'custom' }),
+      fakeTarget({
+        id: 'aaaaaaaa-0000-4000-8000-000000000002',
+        type: 'custom',
+      }),
     );
 
     expect(face.aimPoints).toEqual([{ x: 0.5, y: 0.5 }]);
@@ -70,9 +76,9 @@ describe('resolveFaceGeometry', () => {
 
 describe('isMultiSpot', () => {
   it('is true only for a face with several aiming points', () => {
-    expect(isMultiSpot(resolveFaceGeometry(fakeTarget({ id: WA_40_3SPOT })))).toBe(
-      true,
-    );
+    expect(
+      isMultiSpot(resolveFaceGeometry(fakeTarget({ id: WA_40_3SPOT }))),
+    ).toBe(true);
     expect(isMultiSpot(resolveFaceGeometry(fakeTarget({ id: WA_122 })))).toBe(
       false,
     );

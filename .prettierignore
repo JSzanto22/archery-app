@@ -1,0 +1,11 @@
+node_modules
+dist
+.expo
+mobile/android
+mobile/ios
+mobile/assets
+package-lock.json
+
+# Formatting SQL would fight the alignment the migrations use to make column
+# definitions readable as a table.
+*.sql

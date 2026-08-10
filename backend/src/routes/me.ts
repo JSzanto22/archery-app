@@ -30,7 +30,8 @@ export default async function meRoutes(app: FastifyInstance): Promise<void> {
 
     if (existing[0]) return existing[0];
 
-    const email = (request.headers['x-user-email'] as string | undefined) ?? null;
+    const email =
+      (request.headers['x-user-email'] as string | undefined) ?? null;
 
     const created = await db
       .insert(users)
@@ -50,7 +51,9 @@ export default async function meRoutes(app: FastifyInstance): Promise<void> {
   app.patch('/me', async (request, reply) => {
     const body = patchBody.safeParse(request.body);
     if (!body.success) {
-      return reply.code(400).send({ error: 'Invalid body', detail: body.error.issues });
+      return reply
+        .code(400)
+        .send({ error: 'Invalid body', detail: body.error.issues });
     }
 
     const updated = await db
