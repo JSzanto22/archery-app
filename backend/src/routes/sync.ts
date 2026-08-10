@@ -281,61 +281,62 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
     await db.transaction(async (tx) => {
       // Parents before children, so a foreign key always has something to point
       // at when a whole session arrives from an offline device in one push.
-      for (const raw of [...get('gear_profiles').created, ...get('gear_profiles').updated]) {
-        await tx
-          .insert(gearProfiles)
-          .values({
-            id: str(raw.id),
-            ownerId: userId,
-            name: str(raw.name),
-            bowType: nullableStr(raw.bow_type),
-            notes: nullableStr(raw.notes),
-            createdAt: date(raw.created_at),
-            updatedAt: date(raw.updated_at),
-          })
-          .onConflictDoUpdate({
-            target: gearProfiles.id,
-            set: {
-              name: sql`excluded.name`,
-              bowType: sql`excluded.bow_type`,
-              notes: sql`excluded.notes`,
-              updatedAt: sql`excluded.updated_at`,
-            },
-            // Last write wins. An older copy arriving late must not clobber a
-            // newer one already stored.
-            setWhere: sql`${gearProfiles.ownerId} = ${userId} AND excluded.updated_at > ${gearProfiles.updatedAt}`,
-          });
-      }
+      const incoming = (table: string) => [
+        ...get(table).created,
+        ...get(table).updated,
+      ];
+
+      await upsertMany(
+        tx,
+        gearProfiles,
+        incoming('gear_profiles').map((raw) => ({
+          id: str(raw.id),
+          ownerId: userId,
+          name: str(raw.name),
+          bowType: nullableStr(raw.bow_type),
+          notes: nullableStr(raw.notes),
+          createdAt: date(raw.created_at),
+          updatedAt: date(raw.updated_at),
+        })),
+        gearProfiles.id,
+        {
+          name: sql`excluded.name`,
+          bowType: sql`excluded.bow_type`,
+          notes: sql`excluded.notes`,
+          updatedAt: sql`excluded.updated_at`,
+        },
+        // Last write wins. An older copy arriving late must not clobber a
+        // newer one already stored.
+        sql`${gearProfiles.ownerId} = ${userId} AND excluded.updated_at > ${gearProfiles.updatedAt}`,
+      );
 
       // Custom targets only. A device cannot create or edit a shared preset.
-      for (const raw of [...get('targets').created, ...get('targets').updated]) {
-        if (raw.type === 'preset') continue;
-
-        await tx
-          .insert(targets)
-          .values({
+      await upsertMany(
+        tx,
+        targets,
+        incoming('targets')
+          .filter((raw) => raw.type !== 'preset')
+          .map((raw) => ({
             id: str(raw.id),
             ownerId: userId,
             name: str(raw.name),
-            type: 'custom',
+            type: 'custom' as const,
             baseShape: nullableStr(raw.base_shape),
             aspectRatio: nullableNumericString(raw.aspect_ratio),
             faceWidthCm: nullableNumericString(raw.face_width_cm),
             createdAt: date(raw.created_at),
             updatedAt: date(raw.updated_at),
-          })
-          .onConflictDoUpdate({
-            target: targets.id,
-            set: {
-              name: sql`excluded.name`,
-              baseShape: sql`excluded.base_shape`,
-              aspectRatio: sql`excluded.aspect_ratio`,
-              faceWidthCm: sql`excluded.face_width_cm`,
-              updatedAt: sql`excluded.updated_at`,
-            },
-            setWhere: sql`${targets.ownerId} = ${userId} AND excluded.updated_at > ${targets.updatedAt}`,
-          });
-      }
+          })),
+        targets.id,
+        {
+          name: sql`excluded.name`,
+          baseShape: sql`excluded.base_shape`,
+          aspectRatio: sql`excluded.aspect_ratio`,
+          faceWidthCm: sql`excluded.face_width_cm`,
+          updatedAt: sql`excluded.updated_at`,
+        },
+        sql`${targets.ownerId} = ${userId} AND excluded.updated_at > ${targets.updatedAt}`,
+      );
 
       const ownedTargetIds = await ownedIds(
         tx,
@@ -344,70 +345,71 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
         eq(targets.ownerId, userId),
       );
 
-      for (const raw of [...get('target_zones').created, ...get('target_zones').updated]) {
-        // Silently skipping a zone whose target is not ours is the right call:
-        // a hostile client could otherwise rewrite the scoring rings of a
-        // shared preset for every user.
-        if (!ownedTargetIds.has(str(raw.target_id))) continue;
-
-        await tx
-          .insert(targetZones)
-          .values({
+      await upsertMany(
+        tx,
+        targetZones,
+        incoming('target_zones')
+          // Silently skipping a zone whose target is not ours is the right
+          // call: a hostile client could otherwise rewrite the scoring rings
+          // of a shared preset for every user.
+          .filter((raw) => ownedTargetIds.has(str(raw.target_id)))
+          .map((raw) => ({
             id: str(raw.id),
             targetId: str(raw.target_id),
             zoneIndex: num(raw.zone_index),
             scoreValue: num(raw.score_value),
-            shapeType: str(raw.shape_type) as 'circle' | 'ellipse' | 'rectangle' | 'polygon',
+            shapeType: str(raw.shape_type) as
+              | 'circle'
+              | 'ellipse'
+              | 'rectangle'
+              | 'polygon',
             shapeParams: parseJson(raw.shape_params),
             createdAt: date(raw.created_at),
             updatedAt: date(raw.updated_at),
-          })
-          .onConflictDoUpdate({
-            target: targetZones.id,
-            set: {
-              zoneIndex: sql`excluded.zone_index`,
-              scoreValue: sql`excluded.score_value`,
-              shapeType: sql`excluded.shape_type`,
-              shapeParams: sql`excluded.shape_params`,
-              updatedAt: sql`excluded.updated_at`,
-            },
-            setWhere: sql`excluded.updated_at > ${targetZones.updatedAt}`,
-          });
-      }
+          })),
+        targetZones.id,
+        {
+          zoneIndex: sql`excluded.zone_index`,
+          scoreValue: sql`excluded.score_value`,
+          shapeType: sql`excluded.shape_type`,
+          shapeParams: sql`excluded.shape_params`,
+          updatedAt: sql`excluded.updated_at`,
+        },
+        sql`excluded.updated_at > ${targetZones.updatedAt}`,
+      );
 
-      for (const raw of [...get('sessions').created, ...get('sessions').updated]) {
-        await tx
-          .insert(sessions)
-          .values({
-            id: str(raw.id),
-            ownerId: userId,
-            shotAt: date(raw.shot_at),
-            distanceM: raw.distance_m === null || raw.distance_m === undefined
+      await upsertMany(
+        tx,
+        sessions,
+        incoming('sessions').map((raw) => ({
+          id: str(raw.id),
+          ownerId: userId,
+          shotAt: date(raw.shot_at),
+          distanceM:
+            raw.distance_m === null || raw.distance_m === undefined
               ? null
               : String(raw.distance_m),
-            gearProfileId: nullableStr(raw.gear_profile_id),
-            equipmentTag: nullableStr(raw.equipment_tag),
-            location: nullableStr(raw.location),
-            notes: nullableStr(raw.notes),
-            syncStatus: 'synced',
-            createdAt: date(raw.created_at),
-            updatedAt: date(raw.updated_at),
-          })
-          .onConflictDoUpdate({
-            target: sessions.id,
-            set: {
-              shotAt: sql`excluded.shot_at`,
-              distanceM: sql`excluded.distance_m`,
-              gearProfileId: sql`excluded.gear_profile_id`,
-              equipmentTag: sql`excluded.equipment_tag`,
-              location: sql`excluded.location`,
-              notes: sql`excluded.notes`,
-              syncStatus: sql`'synced'`,
-              updatedAt: sql`excluded.updated_at`,
-            },
-            setWhere: sql`${sessions.ownerId} = ${userId} AND excluded.updated_at > ${sessions.updatedAt}`,
-          });
-      }
+          gearProfileId: nullableStr(raw.gear_profile_id),
+          equipmentTag: nullableStr(raw.equipment_tag),
+          location: nullableStr(raw.location),
+          notes: nullableStr(raw.notes),
+          syncStatus: 'synced' as const,
+          createdAt: date(raw.created_at),
+          updatedAt: date(raw.updated_at),
+        })),
+        sessions.id,
+        {
+          shotAt: sql`excluded.shot_at`,
+          distanceM: sql`excluded.distance_m`,
+          gearProfileId: sql`excluded.gear_profile_id`,
+          equipmentTag: sql`excluded.equipment_tag`,
+          location: sql`excluded.location`,
+          notes: sql`excluded.notes`,
+          syncStatus: sql`'synced'`,
+          updatedAt: sql`excluded.updated_at`,
+        },
+        sql`${sessions.ownerId} = ${userId} AND excluded.updated_at > ${sessions.updatedAt}`,
+      );
 
       const ownedSessionIds = await ownedIds(
         tx,
@@ -416,33 +418,31 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
         eq(sessions.ownerId, userId),
       );
 
-      for (const raw of [...get('rounds').created, ...get('rounds').updated]) {
-        if (!ownedSessionIds.has(str(raw.session_id))) continue;
-
-        await tx
-          .insert(rounds)
-          .values({
+      await upsertMany(
+        tx,
+        rounds,
+        incoming('rounds')
+          .filter((raw) => ownedSessionIds.has(str(raw.session_id)))
+          .map((raw) => ({
             id: str(raw.id),
             sessionId: str(raw.session_id),
             targetId: str(raw.target_id),
             roundOrder: num(raw.round_order),
             photoKey: nullableStr(raw.photo_key),
-            syncStatus: 'synced',
+            syncStatus: 'synced' as const,
             createdAt: date(raw.created_at),
             updatedAt: date(raw.updated_at),
-          })
-          .onConflictDoUpdate({
-            target: rounds.id,
-            set: {
-              targetId: sql`excluded.target_id`,
-              roundOrder: sql`excluded.round_order`,
-              photoKey: sql`excluded.photo_key`,
-              syncStatus: sql`'synced'`,
-              updatedAt: sql`excluded.updated_at`,
-            },
-            setWhere: sql`excluded.updated_at > ${rounds.updatedAt}`,
-          });
-      }
+          })),
+        rounds.id,
+        {
+          targetId: sql`excluded.target_id`,
+          roundOrder: sql`excluded.round_order`,
+          photoKey: sql`excluded.photo_key`,
+          syncStatus: sql`'synced'`,
+          updatedAt: sql`excluded.updated_at`,
+        },
+        sql`excluded.updated_at > ${rounds.updatedAt}`,
+      );
 
       const ownedRoundIds = ownedSessionIds.size
         ? await ownedIds(
@@ -453,12 +453,12 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
           )
         : new Set<string>();
 
-      for (const raw of [...get('arrows').created, ...get('arrows').updated]) {
-        if (!ownedRoundIds.has(str(raw.round_id))) continue;
-
-        await tx
-          .insert(arrows)
-          .values({
+      await upsertMany(
+        tx,
+        arrows,
+        incoming('arrows')
+          .filter((raw) => ownedRoundIds.has(str(raw.round_id)))
+          .map((raw) => ({
             id: str(raw.id),
             roundId: str(raw.round_id),
             x: String(raw.x),
@@ -470,19 +470,17 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
                 : num(raw.shot_order),
             createdAt: date(raw.created_at),
             updatedAt: date(raw.updated_at),
-          })
-          .onConflictDoUpdate({
-            target: arrows.id,
-            set: {
-              x: sql`excluded.x`,
-              y: sql`excluded.y`,
-              scoreValue: sql`excluded.score_value`,
-              shotOrder: sql`excluded.shot_order`,
-              updatedAt: sql`excluded.updated_at`,
-            },
-            setWhere: sql`excluded.updated_at > ${arrows.updatedAt}`,
-          });
-      }
+          })),
+        arrows.id,
+        {
+          x: sql`excluded.x`,
+          y: sql`excluded.y`,
+          scoreValue: sql`excluded.score_value`,
+          shotOrder: sql`excluded.shot_order`,
+          updatedAt: sql`excluded.updated_at`,
+        },
+        sql`excluded.updated_at > ${arrows.updatedAt}`,
+      );
 
       // Deletions, children first so cascades never surprise anyone.
       await deleteOwned(tx, arrows, get('arrows').deleted, ownedRoundIds, 'roundId');
@@ -529,6 +527,57 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
 /* ------------------------------------------------------------------------- */
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Rows per statement.
+ *
+ * Postgres caps a statement at 65535 bound parameters. The widest table here
+ * binds nine columns, so 1000 rows is ~9000 parameters — comfortably inside
+ * the limit with room for the schema to grow.
+ */
+const UPSERT_CHUNK = 1000;
+
+function chunked<T>(items: T[], size = UPSERT_CHUNK): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(items.slice(i, i + size));
+  }
+  return out;
+}
+
+/**
+ * Upsert many rows in as few statements as possible.
+ *
+ * The previous implementation awaited one round-trip per record inside the
+ * transaction. A first sync after a season is a few thousand rows, which meant
+ * a few thousand sequential statements in a single request — slow locally and
+ * a likely Lambda timeout in production, with the whole transaction rolled
+ * back at the end of it.
+ *
+ * Every caller passes the same last-write-wins `setWhere`, so a stale copy
+ * arriving late still loses regardless of batching.
+ */
+async function upsertMany<T extends Record<string, unknown>>(
+  tx: Tx,
+  table: any,
+  rows: T[],
+  conflictTarget: any,
+  set: Record<string, unknown>,
+  setWhere: unknown,
+): Promise<void> {
+  if (rows.length === 0) return;
+
+  for (const batch of chunked(rows)) {
+    await tx
+      .insert(table)
+      .values(batch)
+      .onConflictDoUpdate({
+        target: conflictTarget,
+        set: set as never,
+        setWhere: setWhere as never,
+      });
+  }
+}
 
 /**
  * Ids of rows the caller owns, used to reject pushed children whose parent is
