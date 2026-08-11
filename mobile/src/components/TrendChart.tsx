@@ -137,7 +137,9 @@ export default function TrendChart({
     delta === null ? null : lowerIsBetter ? delta < 0 : delta > 0;
 
   const styles = makeStyles(palette);
-  const active = selected !== null ? points[selected] : null;
+  const active = selected !== null ? (points[selected] ?? null) : null;
+  /** The point the footer describes: whichever is tapped, else the newest. */
+  const shown = active ?? last ?? null;
 
   return (
     <View
@@ -216,25 +218,29 @@ export default function TrendChart({
             <Text style={styles.axisText}>{format(scale.max)}</Text>
           </View>
 
-          <View style={styles.footer}>
-            <Text style={styles.footerLabel}>
-              {active ? active.label : `Latest · ${last.label}`}
-            </Text>
-            <Text style={[styles.footerValue, { color: palette.textPrimary }]}>
-              {format(active ? active.v : last.v)}
-            </Text>
-          </View>
+          {shown ? (
+            <View style={styles.footer}>
+              <Text style={styles.footerLabel}>
+                {active ? active.label : `Latest · ${shown.label}`}
+              </Text>
+              <Text
+                style={[styles.footerValue, { color: palette.textPrimary }]}
+              >
+                {format(shown.v)}
+              </Text>
+            </View>
+          ) : null}
 
           {/* Tap targets are full-height columns, far bigger than the 3px dots. */}
           <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
             <View style={styles.hitRow} pointerEvents="box-none">
-              {points.map((_, i) => (
+              {points.map((point, i) => (
                 <Pressable
-                  key={i}
+                  key={`${point.t}-${i}`}
                   style={styles.hitCell}
                   onPress={() => setSelected(selected === i ? null : i)}
                   accessibilityRole="button"
-                  accessibilityLabel={`${points[i].label}, ${format(points[i].v)}`}
+                  accessibilityLabel={`${point.label}, ${format(point.v)}`}
                 />
               ))}
             </View>

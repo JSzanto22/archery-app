@@ -101,8 +101,15 @@ export function groupSpreadMultiSpot(
   // cluster would hold a single point, every per-cluster spread would be
   // undefined, and the archer would get no grouping figure at all on the one
   // round they shoot most.
+
+  // The early return above guarantees at least two aim points, but that is a
+  // fact about the caller rather than the type — so the seed is taken
+  // explicitly and the search never starts from nothing.
+  const [firstAim] = aimPoints;
+  if (!firstAim) return groupSpread(points, options);
+
   const translated = points.map((p) => {
-    let nearest = aimPoints[0];
+    let nearest = firstAim;
     let best = Infinity;
 
     for (const aim of aimPoints) {
@@ -222,9 +229,18 @@ export function heatMapGrid(points: Point[], resolution = 24): number[] {
   if (points.length === 0) return cells;
 
   for (const p of points) {
-    const col = Math.min(resolution - 1, Math.floor(p.x * resolution));
-    const row = Math.min(resolution - 1, Math.floor(p.y * resolution));
-    cells[row * resolution + col] += 1;
+    // Clamped at both ends: x = 1 would index one cell past the row, and a
+    // negative coordinate from a bad import would wrap into the previous one.
+    const col = Math.min(
+      resolution - 1,
+      Math.max(0, Math.floor(p.x * resolution)),
+    );
+    const row = Math.min(
+      resolution - 1,
+      Math.max(0, Math.floor(p.y * resolution)),
+    );
+    const index = row * resolution + col;
+    cells[index] = (cells[index] ?? 0) + 1;
   }
 
   const peak = Math.max(...cells);

@@ -108,6 +108,8 @@ export async function seedDemoData(sessionCount = 14): Promise<DevSeedResult> {
   await database.write(async () => {
     for (let i = 0; i < sessionCount; i++) {
       const scenario = SCENARIOS[i % SCENARIOS.length];
+      if (!scenario) continue;
+
       const target = targetById.get(scenario.targetId);
       const zones = zonesById.get(scenario.targetId);
       if (!target || !zones) continue;
@@ -151,6 +153,7 @@ export async function seedDemoData(sessionCount = 14): Promise<DevSeedResult> {
         for (let a = 1; a <= scenario.arrowsPerEnd; a++) {
           // On a multi-spot face one arrow goes in each spot.
           const aim = scenario.aimPoints[(a - 1) % scenario.aimPoints.length];
+          if (!aim) continue;
 
           const [z1, z2] = normalPair();
           const flyer = Math.random() < 0.06 ? 2.6 : 1;

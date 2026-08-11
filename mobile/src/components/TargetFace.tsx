@@ -177,7 +177,7 @@ export default function TargetFace({
 
     for (let i = 0; i < grid.length; i++) {
       const intensity = grid[i];
-      if (intensity <= 0) continue;
+      if (!intensity || intensity <= 0) continue;
       const row = Math.floor(i / HEAT_MAP_RESOLUTION);
       const col = i % HEAT_MAP_RESOLUTION;
       cells.push({

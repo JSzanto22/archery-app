@@ -47,7 +47,9 @@ export default function NewSessionScreen({ navigation }: Props) {
       ]);
       setTargets(allTargets);
       setGear(allGear);
-      if (allTargets.length > 0) setTargetId(allTargets[0].id);
+
+      const [firstTarget] = allTargets;
+      if (firstTarget) setTargetId(firstTarget.id);
     })();
   }, []);
 

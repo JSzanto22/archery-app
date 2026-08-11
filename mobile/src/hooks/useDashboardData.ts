@@ -178,11 +178,10 @@ export function useDashboardData(range: RangeKey): DashboardData {
 
       let map: GroupMapData | null = null;
 
-      if (faceCounts.size > 0) {
-        const [dominantId] = [...faceCounts.entries()].sort(
-          (a, b) => b[1] - a[1],
-        )[0];
+      const mostShot = [...faceCounts.entries()].sort((a, b) => b[1] - a[1])[0];
 
+      if (mostShot) {
+        const [dominantId] = mostShot;
         const dominant = targetById.get(dominantId);
 
         if (dominant) {

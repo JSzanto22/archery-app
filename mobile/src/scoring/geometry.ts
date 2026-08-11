@@ -130,8 +130,15 @@ function inPolygon(p: PolygonParams, x: number, y: number): boolean {
   let inside = false;
 
   for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    const [xi, yi] = pts[i];
-    const [xj, yj] = pts[j];
+    const a = pts[i];
+    const b = pts[j];
+    // A malformed polygon — a sparse array, or one shorter than its own
+    // length claims — should skip the edge rather than score the arrow
+    // against NaN, which would silently read as "outside".
+    if (!a || !b) continue;
+
+    const [xi, yi] = a;
+    const [xj, yj] = b;
 
     if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) {
       inside = !inside;

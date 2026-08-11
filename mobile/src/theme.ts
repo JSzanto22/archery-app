@@ -195,6 +195,7 @@ export function zoneColors(
   }
 
   // Sequential blue, step 150 (low score) through 600 (high score).
+  // `as const` so the first element is known to exist and can be the fallback.
   const ramp = [
     '#b7d3f6',
     '#9ec5f4',
@@ -206,10 +207,13 @@ export function zoneColors(
     '#256abf',
     '#1c5cab',
     '#184f95',
-  ];
+  ] as const;
 
-  const t = maxScore <= 0 ? 0 : Math.min(1, Math.max(0, score / maxScore));
-  const fill = ramp[Math.round(t * (ramp.length - 1))];
+  // NaN would survive the clamp — Math.min/max propagate it — and index the
+  // ramp with NaN, yielding undefined and a zone drawn with no fill at all.
+  const ratio = maxScore <= 0 || !Number.isFinite(score) ? 0 : score / maxScore;
+  const t = Math.min(1, Math.max(0, ratio));
+  const fill = ramp[Math.round(t * (ramp.length - 1))] ?? ramp[0];
 
   return { fill, stroke: 'rgba(0,0,0,0.25)' };
 }
