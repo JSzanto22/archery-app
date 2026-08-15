@@ -16,7 +16,14 @@
     "noFallthroughCasesInSwitch": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "exactOptionalPropertyTypes": true,
+
+    // exactOptionalPropertyTypes is deliberately absent, unlike in the backend
+    // and mobile packages. aws-cdk-lib is not written for it: `Vpc` declares
+    // `vpnGatewayId: string | undefined` while the `IVpc` it implements
+    // declares `vpnGatewayId?: string`, so passing a VPC to any construct that
+    // takes one fails to compile. The only way to satisfy the flag is to cast
+    // at every boundary, which would hide real type errors to appease a
+    // library's authoring style.
 
     "declaration": false,
     "sourceMap": true,

@@ -15,6 +15,7 @@ import { App, Tags } from 'aws-cdk-lib';
 
 import { AuthStack } from '../lib/auth-stack.js';
 import { resolveEnv } from '../lib/config.js';
+import { DataStack } from '../lib/data-stack.js';
 import { StorageStack } from '../lib/storage-stack.js';
 
 const app = new App();
@@ -47,10 +48,16 @@ const storage = new StorageStack(app, `Archery-${config.name}-Storage`, {
   description: 'S3 bucket for round photos',
 });
 
+const data = new DataStack(app, `Archery-${config.name}-Data`, {
+  config,
+  env: envBinding,
+  description: 'VPC, Postgres and RDS Proxy',
+});
+
 // Tags land on every resource in every stack, which is what makes the bill
 // legible later: "what is dev costing me" is otherwise unanswerable once two
 // environments share an account.
-for (const stack of [auth, storage]) {
+for (const stack of [auth, storage, data]) {
   Tags.of(stack).add('Application', 'archery-app');
   Tags.of(stack).add('Environment', config.name);
   Tags.of(stack).add('ManagedBy', 'cdk');
