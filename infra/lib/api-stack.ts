@@ -268,5 +268,87 @@ export class ApiStack extends Stack {
       value: api.apiEndpoint,
       description: 'Base URL for the mobile app',
     });
+
+    /*
+     * The migration runner.
+     *
+     * A Lambda rather than a script because the database is in isolated
+     * subnets with no public address — nothing outside this VPC can reach it,
+     * which is the point. It carries the .sql files and shares the API's
+     * connection path, so it is the same proxy, the same IAM auth and the same
+     * certificate.
+     *
+     * Not invoked automatically. See the note at the top of migrate.ts.
+     */
+    const migrator = new nodejs.NodejsFunction(this, 'MigrateFunction', {
+      functionName: resourceName(config, 'migrate'),
+      entry: join(BACKEND_ROOT, 'src', 'migrate.ts'),
+      handler: 'handler',
+      runtime: lambda.Runtime.NODEJS_22_X,
+      architecture: lambda.Architecture.ARM_64,
+      projectRoot: BACKEND_ROOT,
+      depsLockFilePath: join(BACKEND_ROOT, 'package-lock.json'),
+
+      memorySize: 512,
+      // A first run creates every table and seeds the preset faces. Generous
+      // because the cost of a timeout here is a half-applied schema.
+      timeout: Duration.minutes(5),
+
+      vpc: props.vpc,
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
+      securityGroups: [props.securityGroup],
+
+      bundling: {
+        format: nodejs.OutputFormat.ESM,
+        target: 'node22',
+        minify: true,
+        sourceMap: true,
+        externalModules: [],
+        banner:
+          "import{createRequire}from'module';const require=createRequire(import.meta.url);",
+        commandHooks: {
+          beforeBundling: () => [],
+          beforeInstall: () => [],
+          // The SQL is read at runtime, so it travels as files rather than
+          // being inlined. `db/` sits one level above the bundle to match the
+          // path migrate.ts resolves from its own location.
+          afterBundling: (inputDir: string, outputDir: string) => [
+            `node -e "require('fs').copyFileSync('${posix(inputDir)}/certs/${CA_BUNDLE_FILENAME}', '${posix(outputDir)}/${CA_BUNDLE_FILENAME}')"`,
+            `node -e "require('fs').cpSync('${posix(inputDir)}/db', '${posix(outputDir)}/db', {recursive:true})"`,
+          ],
+        },
+      },
+
+      environment: {
+        NODE_ENV: 'production',
+        NODE_OPTIONS: '--enable-source-maps',
+        DATABASE_URL: `postgresql://${props.databaseUser}@${props.proxy.endpoint}:5432/${props.databaseName}`,
+        DB_IAM_AUTH: 'true',
+        DB_CA_BUNDLE_PATH: `/var/task/${CA_BUNDLE_FILENAME}`,
+        // Bundling collapses src/ and db/ into one directory, so the path
+        // migrate.ts would resolve from its own location points outside the
+        // package. Stated here instead.
+        DB_MIGRATIONS_DIR: '/var/task/db',
+        // env.ts validates the whole configuration at module load regardless
+        // of which entry point imported it, so this is required even though
+        // migrations never authenticate anyone.
+        COGNITO_USER_POOL_ID: props.userPool.userPoolId,
+        COGNITO_CLIENT_ID: props.userPoolClient.userPoolClientId,
+        TRUST_GATEWAY_AUTHORIZER: 'true',
+      },
+
+      logGroup: new logs.LogGroup(this, 'MigrateLogs', {
+        logGroupName: `/aws/lambda/${resourceName(config, 'migrate')}`,
+        retention: config.logRetentionDays,
+        removalPolicy: config.removalPolicy,
+      }),
+    });
+
+    props.proxy.grantConnect(migrator, props.databaseUser);
+
+    new CfnOutput(this, 'MigrateCommand', {
+      value: `aws lambda invoke --function-name ${resourceName(config, 'migrate')} --region ${config.region} /dev/stdout`,
+      description: 'Run after deploying, before sending traffic',
+    });
   }
 }
