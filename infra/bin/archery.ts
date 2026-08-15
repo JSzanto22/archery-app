@@ -13,8 +13,9 @@
 
 import { App, Tags } from 'aws-cdk-lib';
 
+import { ApiStack } from '../lib/api-stack.js';
 import { AuthStack } from '../lib/auth-stack.js';
-import { resolveEnv } from '../lib/config.js';
+import { resolveEnv, resolveRegion } from '../lib/config.js';
 import { DataStack } from '../lib/data-stack.js';
 import { StorageStack } from '../lib/storage-stack.js';
 
@@ -22,18 +23,19 @@ const app = new App();
 const config = resolveEnv(app);
 
 /*
- * Account and region come from the ambient CLI credentials.
+ * The account comes from the ambient CLI credentials; the region does not.
  *
- * Left unspecified, CDK would build environment-agnostic templates, which
- * cannot look up an availability zone and quietly produce a two-AZ VPC using
- * dummy zone names. Binding them here makes a deploy to the wrong account fail
- * loudly instead.
+ * Binding the account here means a deploy to the wrong one fails loudly rather
+ * than building environment-agnostic templates. The region is deliberately
+ * *not* taken from CDK_DEFAULT_REGION: the CDK CLI sets that itself, so a
+ * fallback in application code never runs, and an unconfigured machine
+ * silently deploys to us-east-1. It lives in config.ts instead.
  */
 const account = process.env['CDK_DEFAULT_ACCOUNT'];
 
 const envBinding = {
   ...(account === undefined ? {} : { account }),
-  region: process.env['CDK_DEFAULT_REGION'] ?? 'eu-west-2',
+  region: resolveRegion(app, config),
 };
 
 const auth = new AuthStack(app, `Archery-${config.name}-Auth`, {
@@ -54,10 +56,29 @@ const data = new DataStack(app, `Archery-${config.name}-Data`, {
   description: 'VPC, Postgres and RDS Proxy',
 });
 
+/*
+ * The API stack is the only one that depends on the others, and it holds no
+ * state of its own — so it is the one that gets deployed often, and the only
+ * one a routine release touches.
+ */
+const api = new ApiStack(app, `Archery-${config.name}-Api`, {
+  config,
+  env: envBinding,
+  description: 'Lambda and HTTP API',
+  vpc: data.vpc,
+  securityGroup: data.lambdaSecurityGroup,
+  proxy: data.proxy,
+  databaseName: data.databaseName,
+  databaseUser: data.databaseUser,
+  photoBucket: storage.photoBucket,
+  userPool: auth.userPool,
+  userPoolClient: auth.userPoolClient,
+});
+
 // Tags land on every resource in every stack, which is what makes the bill
 // legible later: "what is dev costing me" is otherwise unanswerable once two
 // environments share an account.
-for (const stack of [auth, storage, data]) {
+for (const stack of [auth, storage, data, api]) {
   Tags.of(stack).add('Application', 'archery-app');
   Tags.of(stack).add('Environment', config.name);
   Tags.of(stack).add('ManagedBy', 'cdk');

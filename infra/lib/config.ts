@@ -19,6 +19,18 @@ export interface EnvConfig {
   readonly name: EnvName;
 
   /**
+   * The region, stated rather than inherited.
+   *
+   * Reading `CDK_DEFAULT_REGION` looked like the obliging thing to do and was
+   * a trap: the CDK CLI sets that variable itself from resolved credentials,
+   * so a fallback in the app never applies, and someone with no region
+   * configured silently deploys to us-east-1 while the backend's own default
+   * says eu-west-2. Naming it here means a deploy goes where the code says.
+   * Override deliberately with `-c region=...`.
+   */
+  readonly region: string;
+
+  /**
    * Whether teardown destroys data.
    *
    * Dev stacks are meant to be thrown away; production keeps its database and
@@ -60,9 +72,13 @@ export interface EnvConfig {
   readonly corsAllowedOrigins: readonly string[];
 }
 
+/** Matches the backend's own default in backend/src/env.ts. */
+const DEFAULT_REGION = 'eu-west-2';
+
 const configs: Record<EnvName, EnvConfig> = {
   dev: {
     name: 'dev',
+    region: DEFAULT_REGION,
     removalPolicy: RemovalPolicy.DESTROY,
     protectResources: false,
     logRetentionDays: 7,
@@ -74,6 +90,7 @@ const configs: Record<EnvName, EnvConfig> = {
   },
   prod: {
     name: 'prod',
+    region: DEFAULT_REGION,
     removalPolicy: RemovalPolicy.RETAIN,
     protectResources: true,
     logRetentionDays: 90,
@@ -104,6 +121,19 @@ export function resolveEnv(scope: Construct): EnvConfig {
   }
 
   return configs[requested];
+}
+
+/** The region to deploy into: the environment's, unless overridden by hand. */
+export function resolveRegion(scope: Construct, config: EnvConfig): string {
+  const override = scope.node.tryGetContext('region') as unknown;
+
+  if (override === undefined) return config.region;
+
+  if (typeof override !== 'string' || override.length === 0) {
+    throw new Error('Context "region" must be a non-empty string.');
+  }
+
+  return override;
 }
 
 /** Prefix for every resource name, so two environments can share an account. */

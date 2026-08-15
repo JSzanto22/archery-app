@@ -59,6 +59,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --prefix infra
+      - run: npm ci --prefix backend
+
+      # The deployed function has no internet access, so the RDS certificate
+      # bundle is baked into the artifact at build time. The API stack refuses
+      # to synthesise without it, deliberately — a missing build step should
+      # break the build rather than surface as a TLS error in production.
+      - name: Fetch the RDS CA bundle
+        run: npm run fetch:rds-ca --prefix backend
 
       # Synthesis needs no AWS credentials, which is the point: a template that
       # will not build is caught on the pull request rather than half way

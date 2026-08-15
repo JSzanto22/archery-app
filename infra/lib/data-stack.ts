@@ -175,12 +175,27 @@ export class DataStack extends Stack {
       autoMinorVersionUpgrade: true,
     });
 
+    /*
+     * CDK types `secret` as optional because an instance restored from a
+     * snapshot, or given a literal password, has none. Ours always does — it
+     * is created from `fromGeneratedSecret` above. Checking rather than
+     * asserting turns a future refactor that changes the credentials source
+     * into a synth-time error, instead of a proxy that deploys with nothing to
+     * authenticate with.
+     */
+    const databaseSecret = database.secret;
+    if (!databaseSecret) {
+      throw new Error(
+        'Database has no generated secret; RDS Proxy cannot authenticate.',
+      );
+    }
+
     this.proxy = database.addProxy('Proxy', {
       dbProxyName: resourceName(config, 'db-proxy'),
       vpc: this.vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       securityGroups: [proxySecurityGroup],
-      secrets: [database.secret!],
+      secrets: [databaseSecret],
 
       // No password reaches the function. See the credentials comment above.
       iamAuth: true,
@@ -206,7 +221,7 @@ export class DataStack extends Stack {
     });
 
     new CfnOutput(this, 'DatabaseSecretArn', {
-      value: database.secret!.secretArn,
+      value: databaseSecret.secretArn,
       description:
         'Master credentials. Needed by the migration runner, not by the API.',
     });

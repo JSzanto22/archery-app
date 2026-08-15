@@ -16,6 +16,25 @@ const schema = z
     DATABASE_URL: z.string().url(),
     PORT: z.coerce.number().int().positive().default(3000),
 
+    /**
+     * Authenticate to RDS Proxy with an IAM token instead of the password in
+     * DATABASE_URL. On by default nowhere: local Postgres and CI both use a
+     * password, and only the deployed function has a role to sign with.
+     */
+    DB_IAM_AUTH: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((v) => v === 'true'),
+
+    /**
+     * Path to the Amazon RDS CA bundle, required in production.
+     *
+     * RDS certificates are not signed by a CA in Node's default trust store,
+     * so verification needs the bundle supplied explicitly. Deployment puts it
+     * next to the handler; see infra/.
+     */
+    DB_CA_BUNDLE_PATH: z.string().optional(),
+
     DEV_USER_ID: z.string().uuid().optional(),
     COGNITO_USER_POOL_ID: z.string().optional(),
     COGNITO_CLIENT_ID: z.string().optional(),
@@ -60,6 +79,17 @@ const schema = z
         code: z.ZodIssueCode.custom,
         message:
           'S3_ENDPOINT must not be set when NODE_ENV=production — it redirects object storage away from AWS.',
+      });
+    }
+
+    // Checked here rather than only at connection time so a deploy missing the
+    // bundle fails on the first cold start, with a message that says what is
+    // wrong, instead of on a user's request with a TLS handshake error.
+    if (isProduction && !env.DB_CA_BUNDLE_PATH) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'DB_CA_BUNDLE_PATH is required when NODE_ENV=production — Amazon RDS certificates cannot be verified without it.',
       });
     }
 

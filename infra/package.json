@@ -2,6 +2,7 @@
   "name": "archery-infra",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "AWS CDK app that provisions everything the backend runs on. TypeScript so infrastructure is reviewed in the same language, and the same pull request, as the code it serves.",
   "bin": {
     "archery-infra": "bin/archery.js"
