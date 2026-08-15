@@ -1,0 +1,26 @@
+{
+  "name": "archery-infra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AWS CDK app that provisions everything the backend runs on. TypeScript so infrastructure is reviewed in the same language, and the same pull request, as the code it serves.",
+  "bin": {
+    "archery-infra": "bin/archery.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "deploy": "cdk deploy --all"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.265.0",
+    "constructs": "10.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "aws-cdk": "2.1136.0",
+    "tsx": "4.23.12",
+    "typescript": "5.7.2"
+  }
+}

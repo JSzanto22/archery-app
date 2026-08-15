@@ -47,3 +47,7 @@ cdk.out/
 Thumbs.db
 .idea/
 .vscode/
+
+# CDK synthesis output — generated from infra/lib, never edited by hand
+infra/cdk.out/
+infra/cdk.context.json

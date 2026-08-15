@@ -26,6 +26,9 @@ export default tseslint.config(
       '**/android/**',
       '**/ios/**',
       'mobile/assets/**',
+      // CloudFormation templates synthesised from infra/lib. Generated, large,
+      // and not source.
+      'infra/cdk.out/**',
     ],
   },
 

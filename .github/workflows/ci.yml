@@ -38,6 +38,7 @@ jobs:
       - run: npm ci
       - run: npm ci --prefix mobile
       - run: npm ci --prefix backend
+      - run: npm ci --prefix infra
 
       - name: Prettier
         run: npm run format:check
@@ -47,6 +48,27 @@ jobs:
 
       - name: TypeScript
         run: npm run typecheck
+
+  infra-synth:
+    name: CDK synth
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --prefix infra
+
+      # Synthesis needs no AWS credentials, which is the point: a template that
+      # will not build is caught on the pull request rather than half way
+      # through a deploy. Both environments, because they differ enough that
+      # one passing says little about the other.
+      - name: Synthesise dev
+        run: npm run synth --prefix infra -- -c env=dev
+
+      - name: Synthesise prod
+        run: npm run synth --prefix infra -- -c env=prod
 
   mobile-tests:
     name: Mobile tests
