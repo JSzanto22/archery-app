@@ -168,6 +168,11 @@ export class ApiStack extends Stack {
         COGNITO_USER_POOL_ID: props.userPool.userPoolId,
         COGNITO_CLIENT_ID: props.userPoolClient.userPoolClientId,
 
+        // Identity comes from the authorizer's claims rather than a JWKS fetch
+        // this function has no route to make. Only correct because the
+        // authorizer below is real; see auth.ts.
+        TRUST_GATEWAY_AUTHORIZER: 'true',
+
         CORS_ALLOWED_ORIGINS: config.corsAllowedOrigins.join(','),
 
         // AWS_REGION is reserved and set by the runtime; env.ts reads it from

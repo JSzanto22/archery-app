@@ -39,6 +39,20 @@ const schema = z
     COGNITO_USER_POOL_ID: z.string().optional(),
     COGNITO_CLIENT_ID: z.string().optional(),
 
+    /**
+     * Take identity from API Gateway's verified claims instead of verifying
+     * the token here.
+     *
+     * Only correct when the function is genuinely behind an HTTP API with a
+     * JWT authorizer, which is why it is off by default and set explicitly by
+     * the CDK API stack. Turning it on anywhere else would mean trusting an
+     * event field nobody had checked.
+     */
+    TRUST_GATEWAY_AUTHORIZER: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((v) => v === 'true'),
+
     S3_BUCKET: z.string().optional(),
     AWS_REGION: z.string().default('eu-west-2'),
     PRESIGNED_URL_TTL_SECONDS: z.coerce.number().int().positive().default(900),
@@ -90,6 +104,17 @@ const schema = z
         code: z.ZodIssueCode.custom,
         message:
           'DB_CA_BUNDLE_PATH is required when NODE_ENV=production — Amazon RDS certificates cannot be verified without it.',
+      });
+    }
+
+    // Both set is a contradiction: one says "every request is this user", the
+    // other says "identity comes from a verified token". Rather than pick a
+    // precedence and hope the reader guesses the same one, refuse.
+    if (env.TRUST_GATEWAY_AUTHORIZER && env.DEV_USER_ID) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'TRUST_GATEWAY_AUTHORIZER and DEV_USER_ID are mutually exclusive — the first takes identity from a verified token, the second ignores tokens entirely.',
       });
     }
 

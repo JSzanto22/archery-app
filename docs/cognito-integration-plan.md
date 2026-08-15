@@ -56,20 +56,46 @@ the same pool).
   `Authorization: Bearer …`. The backend verifier is already configured with
   `tokenUse: 'access'`, and API Gateway's JWT authorizer (Task 1) accepts
   access tokens via the `client_id` claim.
-- **Email bootstrap wrinkle:** access tokens carry no `email` claim; the ID
-  token does. `GET /me` already accepts an `x-user-email` header for the first
-  call — the app will send its ID-token email there once. This header is
-  client-asserted, which is acceptable for profile data (it is unique-checked,
-  not trusted for authorization). If we ever want it verified, the backend can
-  optionally verify the ID token for that one endpoint — noted, not planned.
+- **Email bootstrap — superseded.** This plan originally had `GET /me` read the
+  address from a client-asserted `x-user-email` header, on the reasoning that
+  profile data need not be verified. That reasoning was wrong, and the header
+  was removed during the security pass on 2026-08-14.
+
+  `users.email` is `NOT NULL UNIQUE`, so a client-asserted value is not merely
+  unverified — it is a claim on a scarce resource. Anyone could have sent a
+  stranger's address on their own first `/me` call, taken that row, and left
+  the real owner's first `/me` failing the unique constraint forever. An
+  unauthenticated denial of service against a named individual, through a field
+  we described as harmless.
+
+  What replaced it: the email is read from the verified token when the pool
+  supplies one, and otherwise a `{sub}@placeholder.invalid` is stored. Cognito
+  access tokens normally carry no email claim, so in practice the placeholder
+  is what lands.
+
+  **That is fine, because nothing reads the column.** It is written on first
+  call and never selected — not by the API, not by the app. Cognito owns
+  identity and the real address. If a genuine need appears (contacting research
+  participants, say), the honest ways to satisfy it are `AdminGetUser` at the
+  point of use, or a pre-token-generation trigger that puts a verified `email`
+  claim in the access token. Both keep the property that our copy only ever
+  holds something AWS vouched for.
+
 - **Refresh:** `fetchAuthSession()` transparently refreshes; the existing
   `SyncOptions.getAccessToken` callback maps onto it one-to-one. No changes to
   `sync.ts`.
 
 ## 4. Wiring into the existing flow
 
-**Backend: effectively nothing.** Set `COGNITO_USER_POOL_ID` +
-`COGNITO_CLIENT_ID`, leave `DEV_USER_ID` unset outside local dev. Done.
+**Backend: done, and smaller than this said.** The CDK API stack sets
+`COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID` and `TRUST_GATEWAY_AUTHORIZER`, and
+`env.ts` refuses to start in production with `DEV_USER_ID` set.
+
+The one change beyond configuration was option B from the deployment
+assessment: behind API Gateway the JWT authorizer has already verified the
+token, so `auth.ts` reads the subject from the event's claims rather than
+fetching Cognito's JWKS — which the Lambda, sitting in a VPC with no internet
+route, cannot do. In-app verification remains the path everywhere else.
 
 **Mobile: all new, in small pieces.**
 
