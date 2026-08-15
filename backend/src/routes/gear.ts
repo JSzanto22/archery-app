@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { requireAuth } from '../auth.js';
 import { db } from '../db/client.js';
 import { gearProfiles } from '../db/schema.js';
+import { isUniqueViolation } from '../dbErrors.js';
 
 const createBody = z.object({
   id: z.string().uuid(),
@@ -33,14 +34,21 @@ export default async function gearRoutes(app: FastifyInstance): Promise<void> {
         .send({ error: 'Invalid body', detail: body.error.issues });
     }
 
-    // ownerId comes from the token. A client-supplied owner would let anyone
-    // write rows into someone else's account.
-    const created = await db
-      .insert(gearProfiles)
-      .values({ ...body.data, ownerId: request.userId })
-      .returning();
+    try {
+      // ownerId comes from the token. A client-supplied owner would let anyone
+      // write rows into someone else's account.
+      const created = await db
+        .insert(gearProfiles)
+        .values({ ...body.data, ownerId: request.userId })
+        .returning();
 
-    return reply.code(201).send(created[0]);
+      return reply.code(201).send(created[0]);
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return reply.code(409).send({ error: 'Already exists' });
+      }
+      throw error;
+    }
   });
 
   app.patch('/gear/:id', async (request, reply) => {

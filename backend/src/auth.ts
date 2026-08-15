@@ -21,7 +21,29 @@ import { env, isDevAuthEnabled } from './env.js';
 declare module 'fastify' {
   interface FastifyRequest {
     userId: string;
+    /** From the verified token only, and often absent — see resolveEmail. */
+    userEmail: string | null;
   }
+}
+
+interface Identity {
+  userId: string;
+  email: string | null;
+}
+
+/**
+ * The email claim, if the pool puts one in the access token.
+ *
+ * Most Cognito pools do not — email lives on the id token — so this is usually
+ * null and the caller falls back to a placeholder. What matters is that it is
+ * null rather than something a client sent us: `/me` used to take the address
+ * from an `x-user-email` header, which any caller can set to any value. Since
+ * users.email is UNIQUE, that let one account claim a stranger's address and
+ * permanently block that person's first `/me` from creating their row.
+ */
+function resolveEmail(payload: Record<string, unknown>): string | null {
+  const email = payload['email'];
+  return typeof email === 'string' && email.length > 0 ? email : null;
 }
 
 const verifier = env.COGNITO_USER_POOL_ID
@@ -55,9 +77,15 @@ function bearerToken(request: FastifyRequest): string | null {
  * In development, `DEV_USER_ID` short-circuits this so the app is usable
  * without a Cognito pool. `env.ts` makes that impossible in production.
  */
-export async function authenticate(request: FastifyRequest): Promise<string> {
+export async function authenticate(request: FastifyRequest): Promise<Identity> {
   if (isDevAuthEnabled) {
-    return env.DEV_USER_ID!;
+    // The header is honoured here and only here. Dev auth already means "trust
+    // this caller completely", and seeding a recognisable email makes the
+    // local database readable.
+    return {
+      userId: env.DEV_USER_ID!,
+      email: (request.headers['x-user-email'] as string | undefined) ?? null,
+    };
   }
 
   const token = bearerToken(request);
@@ -66,7 +94,7 @@ export async function authenticate(request: FastifyRequest): Promise<string> {
 
   try {
     const payload = await verifier.verify(token);
-    return payload.sub;
+    return { userId: payload.sub, email: resolveEmail(payload) };
   } catch {
     // Deliberately opaque: telling a caller *why* a token failed helps them
     // craft a better one.
@@ -74,13 +102,15 @@ export async function authenticate(request: FastifyRequest): Promise<string> {
   }
 }
 
-/** Fastify preHandler that populates `request.userId`. */
+/** Fastify preHandler that populates `request.userId` and `request.userEmail`. */
 export async function requireAuth(
   request: FastifyRequest,
   reply: FastifyReply,
 ): Promise<void> {
   try {
-    request.userId = await authenticate(request);
+    const identity = await authenticate(request);
+    request.userId = identity.userId;
+    request.userEmail = identity.email;
   } catch (error) {
     if (error instanceof UnauthorizedError) {
       await reply.code(401).send({ error: error.message });

@@ -21,6 +21,7 @@ import { requireAuth } from '../auth.js';
 import { db } from '../db/client.js';
 import { rounds, sessions } from '../db/schema.js';
 import { env } from '../env.js';
+import { isCanonicalPhotoKey, photoKeyFor } from '../storageKeys.js';
 
 /**
  * In AWS this is a plain client: the region comes from config and credentials
@@ -59,9 +60,7 @@ export default async function photoRoutes(app: FastifyInstance): Promise<void> {
     const round = await findOwnedRound(parsed.data.id, request.userId);
     if (!round) return reply.code(404).send({ error: 'Not found' });
 
-    // The key embeds the owner so a bucket policy can scope access by prefix,
-    // and so an object is traceable to a user without a database lookup.
-    const key = `u/${request.userId}/rounds/${round.id}/original.jpg`;
+    const key = photoKeyFor(request.userId, round.id);
 
     const url = await getSignedUrl(
       s3,
@@ -92,9 +91,20 @@ export default async function photoRoutes(app: FastifyInstance): Promise<void> {
     if (!round.photoKey)
       return reply.code(404).send({ error: 'No photo for this round' });
 
+    /*
+     * Sign the DERIVED key, not the stored one.
+     *
+     * Even though writes are now validated, signing what the database happens
+     * to contain would mean any past or future path that writes photo_key
+     * becomes a way to read arbitrary objects. Deriving it here makes the
+     * signed URL a function of the caller's identity and the round they have
+     * already been authorised for, so no stored value can widen it.
+     */
+    const key = photoKeyFor(request.userId, round.id);
+
     const url = await getSignedUrl(
       s3,
-      new GetObjectCommand({ Bucket: env.S3_BUCKET, Key: round.photoKey }),
+      new GetObjectCommand({ Bucket: env.S3_BUCKET, Key: key }),
       { expiresIn: env.PRESIGNED_URL_TTL_SECONDS },
     );
 
@@ -121,6 +131,12 @@ export default async function photoRoutes(app: FastifyInstance): Promise<void> {
 
     const round = await findOwnedRound(parsed.data.id, request.userId);
     if (!round) return reply.code(404).send({ error: 'Not found' });
+
+    // A key that is not the one this caller's round would have been given is
+    // either a client bug or someone probing for another user's objects.
+    if (!isCanonicalPhotoKey(body.data.photoKey, request.userId, round.id)) {
+      return reply.code(400).send({ error: 'Invalid photo key' });
+    }
 
     const updated = await db
       .update(rounds)

@@ -5,14 +5,18 @@ import { z } from 'zod';
 import { requireAuth } from '../auth.js';
 import { db } from '../db/client.js';
 import { targetZones, targets } from '../db/schema.js';
+import { isForeignKeyViolation, isUniqueViolation } from '../dbErrors.js';
+import { MAX_ZONES_PER_TARGET, zoneShapeSchema } from '../zoneShapes.js';
 
-const zoneInput = z.object({
-  id: z.string().uuid(),
-  zoneIndex: z.number().int().min(0),
-  scoreValue: z.number().int().min(0),
-  shapeType: z.enum(['circle', 'ellipse', 'rectangle', 'polygon']),
-  shapeParams: z.record(z.unknown()),
-});
+// Geometry is validated by shape rather than accepted as arbitrary JSON. The
+// rules live in zoneShapes.ts because /sync/push writes the same rows.
+const zoneInput = z
+  .object({
+    id: z.string().uuid(),
+    zoneIndex: z.number().int().min(0).max(1000),
+    scoreValue: z.number().int().min(0).max(100),
+  })
+  .and(zoneShapeSchema);
 
 const createBody = z.object({
   id: z.string().uuid(),
@@ -25,7 +29,7 @@ const createBody = z.object({
   aspectRatio: z.number().positive().max(100).nullable().optional(),
   /** Physical width in centimetres. A face wider than 5 m is a typo. */
   faceWidthCm: z.number().positive().max(500).nullable().optional(),
-  zones: z.array(zoneInput).min(1),
+  zones: z.array(zoneInput).min(1).max(MAX_ZONES_PER_TARGET),
 });
 
 export default async function targetRoutes(
@@ -110,29 +114,38 @@ export default async function targetRoutes(
 
     const { zones, aspectRatio, faceWidthCm, ...target } = body.data;
 
-    const created = await db.transaction(async (tx) => {
-      const inserted = await tx
-        .insert(targets)
-        .values({
-          ...target,
-          aspectRatio: aspectRatio ?? null,
-          faceWidthCm: faceWidthCm ?? null,
-          ownerId: request.userId,
-          // Always 'custom' here. The only way to create a preset is a seed
-          // script, because presets are shared by every user.
-          type: 'custom',
-        })
-        .returning();
+    try {
+      const created = await db.transaction(async (tx) => {
+        const inserted = await tx
+          .insert(targets)
+          .values({
+            ...target,
+            aspectRatio: aspectRatio ?? null,
+            faceWidthCm: faceWidthCm ?? null,
+            ownerId: request.userId,
+            // Always 'custom' here. The only way to create a preset is a seed
+            // script, because presets are shared by every user.
+            type: 'custom',
+          })
+          .returning();
 
-      const insertedZones = await tx
-        .insert(targetZones)
-        .values(zones.map((z) => ({ ...z, targetId: target.id })))
-        .returning();
+        const insertedZones = await tx
+          .insert(targetZones)
+          .values(zones.map((z) => ({ ...z, targetId: target.id })))
+          .returning();
 
-      return { ...inserted[0]!, zones: insertedZones };
-    });
+        return { ...inserted[0]!, zones: insertedZones };
+      });
 
-    return reply.code(201).send(created);
+      return reply.code(201).send(created);
+    } catch (error) {
+      // A duplicate target id, a duplicate zone id, or two zones claiming the
+      // same index. All are the caller's, and all used to be 500s.
+      if (isUniqueViolation(error)) {
+        return reply.code(409).send({ error: 'Already exists' });
+      }
+      throw error;
+    }
   });
 
   app.patch('/targets/:id', async (request, reply) => {
@@ -232,13 +245,4 @@ export default async function targetRoutes(
       throw error;
     }
   });
-}
-
-function isForeignKeyViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: string }).code === '23503'
-  );
 }

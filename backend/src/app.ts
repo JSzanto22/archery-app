@@ -50,16 +50,25 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   /*
-   * Rate limiting.
+   * Rate limiting, keyed on the authenticated user.
    *
-   * Keyed on the authenticated user where there is one, falling back to IP —
-   * behind API Gateway every request arrives from a small set of addresses, so
-   * an IP-only limit would have one heavy syncer throttle everyone else.
+   * The `hook` matters and was wrong before: the plugin defaults to
+   * `onRequest`, which runs BEFORE the `preHandler` that sets `request.userId`,
+   * so the key generator always saw `undefined` and silently fell back to IP.
+   * Behind API Gateway every request arrives from a handful of AWS addresses,
+   * which turned a per-user limit into one shared bucket for the entire
+   * userbase — a protection that did not protect, and a way for one busy
+   * syncing device to lock everyone else out.
+   *
+   * Running at `preHandler` puts the limiter after authentication, so the key
+   * is the identity it was always meant to be. Unauthenticated requests still
+   * fall back to IP, which is the right key for callers with no identity.
    *
    * The ceiling is generous because the expensive endpoint is /sync/push,
    * which a device calls a handful of times a day, not per interaction.
    */
   await app.register(rateLimit, {
+    hook: 'preHandler',
     max: 300,
     timeWindow: '1 minute',
     keyGenerator: (request) => request.userId ?? request.ip,

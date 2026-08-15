@@ -20,6 +20,8 @@ import { z } from 'zod';
 
 import { requireAuth } from '../auth.js';
 import { db } from '../db/client.js';
+import { isCanonicalPhotoKey } from '../storageKeys.js';
+import { parseZoneShape } from '../zoneShapes.js';
 import {
   arrows,
   gearProfiles,
@@ -37,15 +39,31 @@ interface TableChanges {
   deleted: string[];
 }
 
+/*
+ * Bounds on a push.
+ *
+ * The 8 MB body limit was the only ceiling before, and it is the wrong kind of
+ * limit: it caps bytes, not rows to insert or foreign keys to check. These
+ * numbers are far above a real device's backlog — a season of daily practice
+ * is a few thousand arrows — and far below the point where one request becomes
+ * a denial of service. A device with more than this to send syncs twice.
+ */
+const MAX_ROWS_PER_TABLE = 10_000;
+const MAX_TABLES = 32;
+
 const tableChanges = z.object({
-  created: z.array(z.record(z.unknown())).default([]),
-  updated: z.array(z.record(z.unknown())).default([]),
-  deleted: z.array(z.string()).default([]),
+  created: z.array(z.record(z.unknown())).max(MAX_ROWS_PER_TABLE).default([]),
+  updated: z.array(z.record(z.unknown())).max(MAX_ROWS_PER_TABLE).default([]),
+  deleted: z.array(z.string().uuid()).max(MAX_ROWS_PER_TABLE).default([]),
 });
 
 const pushBody = z.object({
   lastPulledAt: z.string().datetime().nullable().optional(),
-  changes: z.record(tableChanges),
+  changes: z
+    .record(tableChanges)
+    .refine((c) => Object.keys(c).length <= MAX_TABLES, {
+      message: `At most ${MAX_TABLES} tables per push`,
+    }),
 });
 
 const pullQuery = z.object({
@@ -289,285 +307,349 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
     const get = (table: string): TableChanges =>
       changes[table] ?? { created: [], updated: [], deleted: [] };
 
-    await db.transaction(async (tx) => {
-      // Parents before children, so a foreign key always has something to point
-      // at when a whole session arrives from an offline device in one push.
-      const incoming = (table: string) => [
-        ...get(table).created,
-        ...get(table).updated,
-      ];
+    try {
+      await db.transaction(async (tx) => {
+        // Parents before children, so a foreign key always has something to point
+        // at when a whole session arrives from an offline device in one push.
+        const incoming = (table: string) => [
+          ...get(table).created,
+          ...get(table).updated,
+        ];
 
-      /*
-       * Deletions run BEFORE the upserts, children first.
-       *
-       * Deleting an arrow and shooting another reuses the freed shot number —
-       * correct for the archer, since the replacement really is the second
-       * arrow. But the deleted row still occupies (round_id, shot_order) until
-       * its tombstone is applied, so upserting first hits the unique index,
-       * the whole transaction rolls back, and the archer's sync fails with
-       * nothing to show for it.
-       *
-       * The ordering costs nothing: a record cannot be in both `deleted` and
-       * `updated` in one push, so nothing that is about to be written is being
-       * removed here.
-       */
-      const ownedSessionsForDelete = await ownedIds(
-        tx,
-        sessions.id,
-        sessions,
-        eq(sessions.ownerId, userId),
-      );
+        /*
+         * Deletions run BEFORE the upserts, children first.
+         *
+         * Deleting an arrow and shooting another reuses the freed shot number —
+         * correct for the archer, since the replacement really is the second
+         * arrow. But the deleted row still occupies (round_id, shot_order) until
+         * its tombstone is applied, so upserting first hits the unique index,
+         * the whole transaction rolls back, and the archer's sync fails with
+         * nothing to show for it.
+         *
+         * The ordering costs nothing: a record cannot be in both `deleted` and
+         * `updated` in one push, so nothing that is about to be written is being
+         * removed here.
+         */
+        const ownedSessionsForDelete = await ownedIds(
+          tx,
+          sessions.id,
+          sessions,
+          eq(sessions.ownerId, userId),
+        );
 
-      const ownedRoundsForDelete = ownedSessionsForDelete.size
-        ? await ownedIds(
-            tx,
-            rounds.id,
-            rounds,
-            inArray(rounds.sessionId, [...ownedSessionsForDelete]),
-          )
-        : new Set<string>();
+        const ownedRoundsForDelete = ownedSessionsForDelete.size
+          ? await ownedIds(
+              tx,
+              rounds.id,
+              rounds,
+              inArray(rounds.sessionId, [...ownedSessionsForDelete]),
+            )
+          : new Set<string>();
 
-      await deleteOwned(
-        tx,
-        arrows,
-        get('arrows').deleted,
-        ownedRoundsForDelete,
-        'roundId',
-      );
-      await deleteOwned(
-        tx,
-        rounds,
-        get('rounds').deleted,
-        ownedSessionsForDelete,
-        'sessionId',
-      );
+        await deleteOwned(
+          tx,
+          arrows,
+          get('arrows').deleted,
+          ownedRoundsForDelete,
+          'roundId',
+        );
+        await deleteOwned(
+          tx,
+          rounds,
+          get('rounds').deleted,
+          ownedSessionsForDelete,
+          'sessionId',
+        );
 
-      if (get('sessions').deleted.length) {
-        await tx
-          .delete(sessions)
-          .where(
-            and(
-              inArray(sessions.id, get('sessions').deleted),
-              eq(sessions.ownerId, userId),
-            ),
-          );
-      }
+        if (get('sessions').deleted.length) {
+          await tx
+            .delete(sessions)
+            .where(
+              and(
+                inArray(sessions.id, get('sessions').deleted),
+                eq(sessions.ownerId, userId),
+              ),
+            );
+        }
 
-      if (get('gear_profiles').deleted.length) {
-        await tx
-          .delete(gearProfiles)
-          .where(
-            and(
-              inArray(gearProfiles.id, get('gear_profiles').deleted),
-              eq(gearProfiles.ownerId, userId),
-            ),
-          );
-      }
+        if (get('gear_profiles').deleted.length) {
+          await tx
+            .delete(gearProfiles)
+            .where(
+              and(
+                inArray(gearProfiles.id, get('gear_profiles').deleted),
+                eq(gearProfiles.ownerId, userId),
+              ),
+            );
+        }
 
-      if (get('targets').deleted.length) {
-        await tx
-          .delete(targets)
-          .where(
-            and(
-              inArray(targets.id, get('targets').deleted),
-              eq(targets.ownerId, userId),
-            ),
-          );
-      }
+        if (get('targets').deleted.length) {
+          await tx
+            .delete(targets)
+            .where(
+              and(
+                inArray(targets.id, get('targets').deleted),
+                eq(targets.ownerId, userId),
+              ),
+            );
+        }
 
-      await upsertMany(
-        tx,
-        gearProfiles,
-        incoming('gear_profiles').map((raw) => ({
-          id: str(raw.id),
-          ownerId: userId,
-          name: str(raw.name),
-          bowType: nullableStr(raw.bow_type),
-          notes: nullableStr(raw.notes),
-          createdAt: date(raw.created_at),
-          updatedAt: date(raw.updated_at),
-        })),
-        gearProfiles.id,
-        {
-          name: sql`excluded.name`,
-          bowType: sql`excluded.bow_type`,
-          notes: sql`excluded.notes`,
-          updatedAt: sql`excluded.updated_at`,
-        },
-        // Last write wins. An older copy arriving late must not clobber a
-        // newer one already stored.
-        sql`${gearProfiles.ownerId} = ${userId} AND excluded.updated_at > ${gearProfiles.updatedAt}`,
-      );
-
-      // Custom targets only. A device cannot create or edit a shared preset.
-      await upsertMany(
-        tx,
-        targets,
-        incoming('targets')
-          .filter((raw) => raw.type !== 'preset')
-          .map((raw) => ({
-            id: str(raw.id),
+        await upsertMany(
+          tx,
+          gearProfiles,
+          incoming('gear_profiles').map((raw) => ({
+            id: uuid(raw.id),
             ownerId: userId,
-            name: str(raw.name),
-            type: 'custom' as const,
-            baseShape: nullableStr(raw.base_shape),
-            aspectRatio: nullablePositiveNumber(raw.aspect_ratio),
-            faceWidthCm: nullablePositiveNumber(raw.face_width_cm),
+            name: requiredStr(raw.name, 120),
+            bowType: boundedStr(raw.bow_type, 60),
+            notes: boundedStr(raw.notes, 2000),
             createdAt: date(raw.created_at),
             updatedAt: date(raw.updated_at),
           })),
-        targets.id,
-        {
-          name: sql`excluded.name`,
-          baseShape: sql`excluded.base_shape`,
-          aspectRatio: sql`excluded.aspect_ratio`,
-          faceWidthCm: sql`excluded.face_width_cm`,
-          updatedAt: sql`excluded.updated_at`,
-        },
-        sql`${targets.ownerId} = ${userId} AND excluded.updated_at > ${targets.updatedAt}`,
-      );
+          gearProfiles.id,
+          {
+            name: sql`excluded.name`,
+            bowType: sql`excluded.bow_type`,
+            notes: sql`excluded.notes`,
+            updatedAt: sql`excluded.updated_at`,
+          },
+          // Last write wins. An older copy arriving late must not clobber a
+          // newer one already stored.
+          sql`${gearProfiles.ownerId} = ${userId} AND excluded.updated_at > ${gearProfiles.updatedAt}`,
+        );
 
-      const ownedTargetIds = await ownedIds(
-        tx,
-        targets.id,
-        targets,
-        eq(targets.ownerId, userId),
-      );
+        // Custom targets only. A device cannot create or edit a shared preset.
+        await upsertMany(
+          tx,
+          targets,
+          incoming('targets')
+            .filter((raw) => raw.type !== 'preset')
+            .map((raw) => ({
+              id: uuid(raw.id),
+              ownerId: userId,
+              name: requiredStr(raw.name, 120),
+              type: 'custom' as const,
+              baseShape: boundedStr(raw.base_shape, 60),
+              aspectRatio: nullablePositiveNumber(raw.aspect_ratio),
+              faceWidthCm: nullablePositiveNumber(raw.face_width_cm),
+              createdAt: date(raw.created_at),
+              updatedAt: date(raw.updated_at),
+            })),
+          targets.id,
+          {
+            name: sql`excluded.name`,
+            baseShape: sql`excluded.base_shape`,
+            aspectRatio: sql`excluded.aspect_ratio`,
+            faceWidthCm: sql`excluded.face_width_cm`,
+            updatedAt: sql`excluded.updated_at`,
+          },
+          sql`${targets.ownerId} = ${userId} AND excluded.updated_at > ${targets.updatedAt}`,
+        );
 
-      await upsertMany(
-        tx,
-        targetZones,
-        incoming('target_zones')
-          // Silently skipping a zone whose target is not ours is the right
-          // call: a hostile client could otherwise rewrite the scoring rings
-          // of a shared preset for every user.
-          .filter((raw) => ownedTargetIds.has(str(raw.target_id)))
-          .map((raw) => ({
-            id: str(raw.id),
-            targetId: str(raw.target_id),
-            zoneIndex: num(raw.zone_index),
-            scoreValue: num(raw.score_value),
-            shapeType: str(raw.shape_type) as
-              'circle' | 'ellipse' | 'rectangle' | 'polygon',
-            shapeParams: parseJson(raw.shape_params),
-            createdAt: date(raw.created_at),
-            updatedAt: date(raw.updated_at),
-          })),
-        targetZones.id,
-        {
-          zoneIndex: sql`excluded.zone_index`,
-          scoreValue: sql`excluded.score_value`,
-          shapeType: sql`excluded.shape_type`,
-          shapeParams: sql`excluded.shape_params`,
-          updatedAt: sql`excluded.updated_at`,
-        },
-        sql`excluded.updated_at > ${targetZones.updatedAt}`,
-      );
+        // Read after the upserts above, so a session can reference gear and a
+        // round can reference a face that arrived in the same push.
+        const ownedGearIds = await ownedIds(
+          tx,
+          gearProfiles.id,
+          gearProfiles,
+          eq(gearProfiles.ownerId, userId),
+        );
 
-      await upsertMany(
-        tx,
-        sessions,
-        incoming('sessions').map((raw) => ({
-          id: str(raw.id),
-          ownerId: userId,
-          shotAt: date(raw.shot_at),
-          distanceM:
-            raw.distance_m === null || raw.distance_m === undefined
-              ? null
-              : num(raw.distance_m),
-          gearProfileId: nullableStr(raw.gear_profile_id),
-          equipmentTag: nullableStr(raw.equipment_tag),
-          location: nullableStr(raw.location),
-          notes: nullableStr(raw.notes),
-          syncStatus: 'synced' as const,
-          createdAt: date(raw.created_at),
-          updatedAt: date(raw.updated_at),
-        })),
-        sessions.id,
-        {
-          shotAt: sql`excluded.shot_at`,
-          distanceM: sql`excluded.distance_m`,
-          gearProfileId: sql`excluded.gear_profile_id`,
-          equipmentTag: sql`excluded.equipment_tag`,
-          location: sql`excluded.location`,
-          notes: sql`excluded.notes`,
-          syncStatus: sql`'synced'`,
-          updatedAt: sql`excluded.updated_at`,
-        },
-        sql`${sessions.ownerId} = ${userId} AND excluded.updated_at > ${sessions.updatedAt}`,
-      );
+        const ownedTargetIds = await ownedIds(
+          tx,
+          targets.id,
+          targets,
+          eq(targets.ownerId, userId),
+        );
 
-      const ownedSessionIds = await ownedIds(
-        tx,
-        sessions.id,
-        sessions,
-        eq(sessions.ownerId, userId),
-      );
+        // Presets included: every device may shoot at a shared face, and only
+        // custom faces are owned.
+        const visibleTargets = await ownedIds(
+          tx,
+          targets.id,
+          targets,
+          or(isNull(targets.ownerId), eq(targets.ownerId, userId)),
+        );
 
-      await upsertMany(
-        tx,
-        rounds,
-        incoming('rounds')
-          .filter((raw) => ownedSessionIds.has(str(raw.session_id)))
-          .map((raw) => ({
-            id: str(raw.id),
-            sessionId: str(raw.session_id),
-            targetId: str(raw.target_id),
-            roundOrder: num(raw.round_order),
-            photoKey: nullableStr(raw.photo_key),
-            syncStatus: 'synced' as const,
-            createdAt: date(raw.created_at),
-            updatedAt: date(raw.updated_at),
-          })),
-        rounds.id,
-        {
-          targetId: sql`excluded.target_id`,
-          roundOrder: sql`excluded.round_order`,
-          photoKey: sql`excluded.photo_key`,
-          syncStatus: sql`'synced'`,
-          updatedAt: sql`excluded.updated_at`,
-        },
-        sql`excluded.updated_at > ${rounds.updatedAt}`,
-      );
+        await upsertMany(
+          tx,
+          targetZones,
+          incoming('target_zones')
+            // Silently skipping a zone whose target is not ours is the right
+            // call: a hostile client could otherwise rewrite the scoring rings
+            // of a shared preset for every user.
+            .filter((raw) => ownedTargetIds.has(str(raw.target_id)))
+            .map((raw) => {
+              // Same rules as POST /targets. Geometry that reaches the device
+              // unvalidated turns into NaN comparisons, and an arrow inside a
+              // broken ring scores as a miss with nothing on screen to explain
+              // it.
+              const shape = parseZoneShape(raw.shape_type, raw.shape_params);
+              if (!shape) {
+                throw new PushValidationError('Invalid zone geometry');
+              }
 
-      const ownedRoundIds = ownedSessionIds.size
-        ? await ownedIds(
-            tx,
-            rounds.id,
-            rounds,
-            inArray(rounds.sessionId, [...ownedSessionIds]),
-          )
-        : new Set<string>();
+              return {
+                id: uuid(raw.id),
+                targetId: uuid(raw.target_id),
+                zoneIndex: boundedInt(raw.zone_index, 0, 1000),
+                scoreValue: boundedInt(raw.score_value, 0, 100),
+                shapeType: shape.shapeType,
+                shapeParams: shape.shapeParams as Record<string, unknown>,
+                createdAt: date(raw.created_at),
+                updatedAt: date(raw.updated_at),
+              };
+            }),
+          targetZones.id,
+          {
+            zoneIndex: sql`excluded.zone_index`,
+            scoreValue: sql`excluded.score_value`,
+            shapeType: sql`excluded.shape_type`,
+            shapeParams: sql`excluded.shape_params`,
+            updatedAt: sql`excluded.updated_at`,
+          },
+          sql`excluded.updated_at > ${targetZones.updatedAt}`,
+        );
 
-      await upsertMany(
-        tx,
-        arrows,
-        incoming('arrows')
-          .filter((raw) => ownedRoundIds.has(str(raw.round_id)))
-          .map((raw) => ({
-            id: str(raw.id),
-            roundId: str(raw.round_id),
-            x: num(raw.x),
-            y: num(raw.y),
-            scoreValue: num(raw.score_value),
-            shotOrder:
-              raw.shot_order === null || raw.shot_order === undefined
-                ? null
-                : num(raw.shot_order),
-            createdAt: date(raw.created_at),
-            updatedAt: date(raw.updated_at),
-          })),
-        arrows.id,
-        {
-          x: sql`excluded.x`,
-          y: sql`excluded.y`,
-          scoreValue: sql`excluded.score_value`,
-          shotOrder: sql`excluded.shot_order`,
-          updatedAt: sql`excluded.updated_at`,
-        },
-        sql`excluded.updated_at > ${arrows.updatedAt}`,
-      );
-    });
+        await upsertMany(
+          tx,
+          sessions,
+          incoming('sessions').map((raw) => {
+            const gearId = nullableStr(raw.gear_profile_id);
+
+            return {
+              id: uuid(raw.id),
+              ownerId: userId,
+              shotAt: date(raw.shot_at),
+              distanceM:
+                raw.distance_m === null || raw.distance_m === undefined
+                  ? null
+                  : bounded(raw.distance_m, 0, 9999),
+              // Dropped rather than rejected when it is not ours: an id we have
+              // never heard of fails the foreign key and rolls back the archer's
+              // whole push, and one belonging to someone else must not become a
+              // reference either way.
+              gearProfileId: gearId && ownedGearIds.has(gearId) ? gearId : null,
+              equipmentTag: boundedStr(raw.equipment_tag, 200),
+              location: boundedStr(raw.location, 200),
+              notes: boundedStr(raw.notes, 4000),
+              syncStatus: 'synced' as const,
+              createdAt: date(raw.created_at),
+              updatedAt: date(raw.updated_at),
+            };
+          }),
+          sessions.id,
+          {
+            shotAt: sql`excluded.shot_at`,
+            distanceM: sql`excluded.distance_m`,
+            gearProfileId: sql`excluded.gear_profile_id`,
+            equipmentTag: sql`excluded.equipment_tag`,
+            location: sql`excluded.location`,
+            notes: sql`excluded.notes`,
+            syncStatus: sql`'synced'`,
+            updatedAt: sql`excluded.updated_at`,
+          },
+          sql`${sessions.ownerId} = ${userId} AND excluded.updated_at > ${sessions.updatedAt}`,
+        );
+
+        const ownedSessionIds = await ownedIds(
+          tx,
+          sessions.id,
+          sessions,
+          eq(sessions.ownerId, userId),
+        );
+
+        await upsertMany(
+          tx,
+          rounds,
+          incoming('rounds')
+            .filter((raw) => ownedSessionIds.has(str(raw.session_id)))
+            // A target that is neither a shared preset nor ours is not a
+            // reference this device gets to create. Left in, a guessed id
+            // attached another user's private face to this round; a made-up one
+            // failed the foreign key and rolled back the entire push.
+            .filter((raw) => visibleTargets.has(str(raw.target_id)))
+            .map((raw) => {
+              const id = uuid(raw.id);
+              const suppliedKey = boundedStr(raw.photo_key, 1024);
+
+              return {
+                id,
+                sessionId: uuid(raw.session_id),
+                targetId: uuid(raw.target_id),
+                roundOrder: boundedInt(raw.round_order, 0, 1000),
+                // Same rule as PATCH /rounds/:id — a photo key is derived from
+                // the owner and the round, never taken from the wire. Sync would
+                // otherwise be a second way to point a round at someone else's
+                // object and have the API sign a URL for it.
+                photoKey: isCanonicalPhotoKey(suppliedKey, userId, id)
+                  ? suppliedKey
+                  : null,
+                syncStatus: 'synced' as const,
+                createdAt: date(raw.created_at),
+                updatedAt: date(raw.updated_at),
+              };
+            }),
+          rounds.id,
+          {
+            targetId: sql`excluded.target_id`,
+            roundOrder: sql`excluded.round_order`,
+            photoKey: sql`excluded.photo_key`,
+            syncStatus: sql`'synced'`,
+            updatedAt: sql`excluded.updated_at`,
+          },
+          sql`excluded.updated_at > ${rounds.updatedAt}`,
+        );
+
+        const ownedRoundIds = ownedSessionIds.size
+          ? await ownedIds(
+              tx,
+              rounds.id,
+              rounds,
+              inArray(rounds.sessionId, [...ownedSessionIds]),
+            )
+          : new Set<string>();
+
+        await upsertMany(
+          tx,
+          arrows,
+          incoming('arrows')
+            .filter((raw) => ownedRoundIds.has(str(raw.round_id)))
+            .map((raw) => ({
+              id: uuid(raw.id),
+              roundId: uuid(raw.round_id),
+              // Normalized to the face, so 0-1 is the whole domain. The column
+              // is NUMERIC(9,6) with a CHECK, and anything outside took down the
+              // transaction rather than the row.
+              x: bounded(raw.x, 0, 1),
+              y: bounded(raw.y, 0, 1),
+              scoreValue: boundedInt(raw.score_value, 0, 100),
+              shotOrder:
+                raw.shot_order === null || raw.shot_order === undefined
+                  ? null
+                  : boundedInt(raw.shot_order, 1, 1000),
+              createdAt: date(raw.created_at),
+              updatedAt: date(raw.updated_at),
+            })),
+          arrows.id,
+          {
+            x: sql`excluded.x`,
+            y: sql`excluded.y`,
+            scoreValue: sql`excluded.score_value`,
+            shotOrder: sql`excluded.shot_order`,
+            updatedAt: sql`excluded.updated_at`,
+          },
+          sql`excluded.updated_at > ${arrows.updatedAt}`,
+        );
+      });
+    } catch (error) {
+      if (error instanceof PushValidationError) {
+        return reply
+          .code(400)
+          .send({ error: 'Invalid changes', detail: error.message });
+      }
+      throw error;
+    }
 
     return { ok: true };
   });
@@ -662,16 +744,65 @@ async function deleteOwned(
     );
 }
 
+/**
+ * A row in a push was not what it claimed to be.
+ *
+ * The coercion helpers below used to throw a plain Error, which reached the
+ * generic handler as a 500. That is the wrong answer twice over: the caller
+ * caused it, so it is a 400, and a request any client can send at will should
+ * not raise the server's error rate or wake anyone up.
+ */
+class PushValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PushValidationError';
+  }
+}
+
 function str(value: unknown): string {
   if (typeof value !== 'string') {
-    throw new Error(`Expected a string, received ${typeof value}`);
+    throw new PushValidationError(
+      `Expected a string, received ${typeof value}`,
+    );
   }
   return value;
 }
 
+function uuid(value: unknown): string {
+  const s = str(value);
+  if (!UUID_PATTERN.test(s)) {
+    throw new PushValidationError('Expected a uuid');
+  }
+  return s;
+}
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function nullableStr(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   return str(value);
+}
+
+/**
+ * A required string bounded in length.
+ *
+ * Every text column here is unbounded in Postgres, so without a ceiling a
+ * single push could store megabytes in a session's notes and hand them back on
+ * every subsequent pull to every device the archer owns.
+ */
+function requiredStr(value: unknown, max: number): string {
+  const s = str(value);
+  if (s.length > max) {
+    throw new PushValidationError(`Expected at most ${max} characters`);
+  }
+  return s;
+}
+
+/** The same, for a column that accepts NULL. */
+function boundedStr(value: unknown, max: number): string | null {
+  if (value === null || value === undefined) return null;
+  return requiredStr(value, max);
 }
 
 /**
@@ -691,22 +822,55 @@ function nullablePositiveNumber(value: unknown): number | null {
 function num(value: unknown): number {
   const n = typeof value === 'string' ? Number.parseFloat(value) : value;
   if (typeof n !== 'number' || !Number.isFinite(n)) {
-    throw new Error(`Expected a number, received ${String(value)}`);
+    throw new PushValidationError(
+      `Expected a number, received ${String(value)}`,
+    );
   }
   return n;
 }
 
-function date(value: unknown): Date {
-  const d = new Date(value as string | number);
-  if (Number.isNaN(d.getTime())) {
-    throw new Error(`Expected a timestamp, received ${String(value)}`);
+/**
+ * A number inside the range its column actually accepts.
+ *
+ * Unbounded, these values reached the database and failed a CHECK or a NUMERIC
+ * precision limit, which rolled back the whole transaction and returned a 500.
+ * The REST routes have validated the same fields for a while; sync was the way
+ * round them — an arrow at x = 1e9 or scoring 2^31 went in through here.
+ */
+function bounded(value: unknown, min: number, max: number): number {
+  const n = num(value);
+  if (n < min || n > max) {
+    throw new PushValidationError(
+      `Expected a number between ${min} and ${max}`,
+    );
   }
-  return d;
+  return n;
 }
 
-function parseJson(value: unknown): Record<string, unknown> {
-  if (typeof value === 'object' && value !== null) {
-    return value as Record<string, unknown>;
+function boundedInt(value: unknown, min: number, max: number): number {
+  const n = bounded(value, min, max);
+  if (!Number.isInteger(n)) {
+    throw new PushValidationError('Expected an integer');
   }
-  return JSON.parse(str(value)) as Record<string, unknown>;
+  return n;
+}
+
+/** Timestamps outside this are a corrupt clock, not archery history. */
+const MIN_TIMESTAMP_MS = Date.UTC(1970, 0, 1);
+const MAX_TIMESTAMP_MS = Date.UTC(2200, 0, 1);
+
+function date(value: unknown): Date {
+  const d = new Date(value as string | number);
+  const ms = d.getTime();
+  if (Number.isNaN(ms)) {
+    throw new PushValidationError(
+      `Expected a timestamp, received ${String(value)}`,
+    );
+  }
+  // A year outside Postgres's practical range aborts the statement, which
+  // rolls back every other row in the same push.
+  if (ms < MIN_TIMESTAMP_MS || ms > MAX_TIMESTAMP_MS) {
+    throw new PushValidationError('Timestamp out of range');
+  }
+  return d;
 }

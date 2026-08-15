@@ -1,36 +1,62 @@
-import { and, asc, desc, eq, gte, inArray, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lte, or } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { requireAuth } from '../auth.js';
 import { db } from '../db/client.js';
-import { arrows, rounds, sessions } from '../db/schema.js';
+import { isUniqueViolation } from '../dbErrors.js';
+import {
+  arrows,
+  gearProfiles,
+  rounds,
+  sessions,
+  targets,
+} from '../db/schema.js';
+
+/*
+ * Every array a caller controls is bounded.
+ *
+ * Unbounded, the 8 MB body limit was the only ceiling — roughly 35,000 arrows
+ * or zones in a single request, each one a row to insert and, for zones,
+ * geometry the device then evaluates per arrow. The limits below are far above
+ * any real archery round (a 144-arrow FITA is the long end) and far below the
+ * point where one request becomes a denial of service.
+ */
+export const MAX_ARROWS_PER_ROUND = 200;
+export const MAX_ROUNDS_PER_SESSION = 60;
 
 const arrowInput = z.object({
   id: z.string().uuid(),
   x: z.number().min(0).max(1),
   y: z.number().min(0).max(1),
-  scoreValue: z.number().int().min(0),
-  shotOrder: z.number().int().positive().nullable().optional(),
+  // An upper bound as well as a lower one: a 12 is the highest any face here
+  // scores, and without a ceiling a caller could inflate their own history to
+  // an arbitrary integer.
+  scoreValue: z.number().int().min(0).max(100),
+  shotOrder: z.number().int().positive().max(1000).nullable().optional(),
 });
 
 const roundInput = z.object({
   id: z.string().uuid(),
   targetId: z.string().uuid(),
-  roundOrder: z.number().int().min(0),
+  roundOrder: z.number().int().min(0).max(1000),
+  // Accepted for shape compatibility and then ignored — the canonical key is
+  // derived server-side. See storageKeys.ts.
   photoKey: z.string().max(1024).nullable().optional(),
-  arrows: z.array(arrowInput).optional(),
+  arrows: z.array(arrowInput).max(MAX_ARROWS_PER_ROUND).optional(),
 });
 
 const sessionInput = z.object({
   id: z.string().uuid(),
   shotAt: z.coerce.date(),
-  distanceM: z.number().positive().nullable().optional(),
+  // 9999.99 is what NUMERIC(6,2) holds; anything larger became a 500 from the
+  // database rather than a 400 from validation.
+  distanceM: z.number().positive().max(9999).nullable().optional(),
   gearProfileId: z.string().uuid().nullable().optional(),
   equipmentTag: z.string().trim().max(200).nullable().optional(),
   location: z.string().trim().max(200).nullable().optional(),
   notes: z.string().trim().max(4000).nullable().optional(),
-  rounds: z.array(roundInput).optional(),
+  rounds: z.array(roundInput).max(MAX_ROUNDS_PER_SESSION).optional(),
 });
 
 const listQuery = z.object({
@@ -143,65 +169,92 @@ export default async function sessionRoutes(
 
     const { rounds: roundPayload, distanceM, ...session } = body.data;
 
-    const created = await db.transaction(async (tx) => {
-      const inserted = await tx
-        .insert(sessions)
-        .values({
-          ...session,
-          distanceM: distanceM ?? null,
-          ownerId: request.userId,
-          syncStatus: 'synced',
-        })
-        .returning();
+    if (
+      session.gearProfileId &&
+      !(await ownsGearProfile(session.gearProfileId, request.userId))
+    ) {
+      return reply.code(400).send({ error: 'Unknown gear profile' });
+    }
 
-      if (!roundPayload?.length) return { ...inserted[0]!, rounds: [] };
+    const visible = await visibleTargetIds(
+      (roundPayload ?? []).map((r) => r.targetId),
+      request.userId,
+    );
+    const unknownTarget = (roundPayload ?? []).find(
+      (r) => !visible.has(r.targetId),
+    );
+    if (unknownTarget) {
+      return reply.code(400).send({ error: 'Unknown target' });
+    }
 
-      const insertedRounds = await tx
-        .insert(rounds)
-        .values(
-          roundPayload.map((r) => ({
-            id: r.id,
-            sessionId: session.id,
-            targetId: r.targetId,
-            roundOrder: r.roundOrder,
-            photoKey: r.photoKey ?? null,
-            syncStatus: 'synced' as const,
+    try {
+      const created = await db.transaction(async (tx) => {
+        const inserted = await tx
+          .insert(sessions)
+          .values({
+            ...session,
+            distanceM: distanceM ?? null,
+            ownerId: request.userId,
+            syncStatus: 'synced',
+          })
+          .returning();
+
+        if (!roundPayload?.length) return { ...inserted[0]!, rounds: [] };
+
+        const insertedRounds = await tx
+          .insert(rounds)
+          .values(
+            roundPayload.map((r) => ({
+              id: r.id,
+              sessionId: session.id,
+              targetId: r.targetId,
+              roundOrder: r.roundOrder,
+              photoKey: r.photoKey ?? null,
+              syncStatus: 'synced' as const,
+            })),
+          )
+          .returning();
+
+        const arrowRows = roundPayload.flatMap((r) =>
+          (r.arrows ?? []).map((a) => ({
+            id: a.id,
+            roundId: r.id,
+            x: a.x,
+            y: a.y,
+            scoreValue: a.scoreValue,
+            shotOrder: a.shotOrder ?? null,
           })),
-        )
-        .returning();
+        );
 
-      const arrowRows = roundPayload.flatMap((r) =>
-        (r.arrows ?? []).map((a) => ({
-          id: a.id,
-          roundId: r.id,
-          x: a.x,
-          y: a.y,
-          scoreValue: a.scoreValue,
-          shotOrder: a.shotOrder ?? null,
-        })),
-      );
+        const insertedArrows = arrowRows.length
+          ? await tx.insert(arrows).values(arrowRows).returning()
+          : [];
 
-      const insertedArrows = arrowRows.length
-        ? await tx.insert(arrows).values(arrowRows).returning()
-        : [];
+        const byRound = new Map<string, typeof insertedArrows>();
+        for (const arrow of insertedArrows) {
+          const bucket = byRound.get(arrow.roundId) ?? [];
+          bucket.push(arrow);
+          byRound.set(arrow.roundId, bucket);
+        }
 
-      const byRound = new Map<string, typeof insertedArrows>();
-      for (const arrow of insertedArrows) {
-        const bucket = byRound.get(arrow.roundId) ?? [];
-        bucket.push(arrow);
-        byRound.set(arrow.roundId, bucket);
+        return {
+          ...inserted[0]!,
+          rounds: insertedRounds.map((r) => ({
+            ...r,
+            arrows: byRound.get(r.id) ?? [],
+          })),
+        };
+      });
+
+      return reply.code(201).send(created);
+    } catch (error) {
+      // A resent id, or two rounds claiming the same order in one session. The
+      // offline client retries, so this is a normal thing to receive.
+      if (isUniqueViolation(error)) {
+        return reply.code(409).send({ error: 'Already exists' });
       }
-
-      return {
-        ...inserted[0]!,
-        rounds: insertedRounds.map((r) => ({
-          ...r,
-          arrows: byRound.get(r.id) ?? [],
-        })),
-      };
-    });
-
-    return reply.code(201).send(created);
+      throw error;
+    }
   });
 
   app.patch('/sessions/:id', async (request, reply) => {
@@ -221,6 +274,13 @@ export default async function sessionRoutes(
     }
 
     const { distanceM, ...fields } = body.data;
+
+    if (
+      fields.gearProfileId &&
+      !(await ownsGearProfile(fields.gearProfileId, request.userId))
+    ) {
+      return reply.code(400).send({ error: 'Unknown gear profile' });
+    }
 
     const updated = await db
       .update(sessions)
@@ -278,19 +338,34 @@ export default async function sessionRoutes(
     const owns = await ownsSession(params.data.id, request.userId);
     if (!owns) return reply.code(404).send({ error: 'Not found' });
 
-    const created = await db
-      .insert(rounds)
-      .values({
-        id: body.data.id,
-        sessionId: params.data.id,
-        targetId: body.data.targetId,
-        roundOrder: body.data.roundOrder,
-        photoKey: body.data.photoKey ?? null,
-        syncStatus: 'synced',
-      })
-      .returning();
+    const visible = await visibleTargetIds(
+      [body.data.targetId],
+      request.userId,
+    );
+    if (!visible.has(body.data.targetId)) {
+      return reply.code(400).send({ error: 'Unknown target' });
+    }
 
-    return reply.code(201).send(created[0]);
+    try {
+      const created = await db
+        .insert(rounds)
+        .values({
+          id: body.data.id,
+          sessionId: params.data.id,
+          targetId: body.data.targetId,
+          roundOrder: body.data.roundOrder,
+          photoKey: body.data.photoKey ?? null,
+          syncStatus: 'synced',
+        })
+        .returning();
+
+      return reply.code(201).send(created[0]);
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return reply.code(409).send({ error: 'Already exists' });
+      }
+      throw error;
+    }
   });
 
   /**
@@ -307,7 +382,7 @@ export default async function sessionRoutes(
     if (!params.success) return reply.code(400).send({ error: 'Invalid id' });
 
     const body = z
-      .object({ arrows: z.array(arrowInput) })
+      .object({ arrows: z.array(arrowInput).max(MAX_ARROWS_PER_ROUND) })
       .safeParse(request.body);
     if (!body.success) {
       return reply
@@ -385,6 +460,52 @@ async function ownsSession(
     .select({ id: sessions.id })
     .from(sessions)
     .where(and(eq(sessions.id, sessionId), eq(sessions.ownerId, userId)))
+    .limit(1);
+
+  return rows.length > 0;
+}
+
+/**
+ * Which of these target ids the caller is allowed to reference: shared presets
+ * and their own custom faces.
+ *
+ * A round's target_id was passed straight to the insert. Two things followed
+ * from that. A random uuid failed the foreign key and surfaced as a 500 — an
+ * error the caller caused being reported as our fault. And a *real* id
+ * belonging to another user was accepted, quietly attaching that user's private
+ * face to this user's round, which is a reference nobody should be able to
+ * create by guessing.
+ */
+async function visibleTargetIds(
+  ids: readonly string[],
+  userId: string,
+): Promise<Set<string>> {
+  if (ids.length === 0) return new Set();
+
+  const rows = await db
+    .select({ id: targets.id })
+    .from(targets)
+    .where(
+      and(
+        inArray(targets.id, [...new Set(ids)]),
+        or(isNull(targets.ownerId), eq(targets.ownerId, userId)),
+      ),
+    );
+
+  return new Set(rows.map((r) => r.id));
+}
+
+/** Same reasoning as visibleTargetIds, for a session's gear profile. */
+async function ownsGearProfile(
+  gearProfileId: string,
+  userId: string,
+): Promise<boolean> {
+  const rows = await db
+    .select({ id: gearProfiles.id })
+    .from(gearProfiles)
+    .where(
+      and(eq(gearProfiles.id, gearProfileId), eq(gearProfiles.ownerId, userId)),
+    )
     .limit(1);
 
   return rows.length > 0;

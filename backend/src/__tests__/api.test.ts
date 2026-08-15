@@ -16,7 +16,14 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { buildApp } from '../app.js';
 import { closeDatabase, db } from '../db/client.js';
-import { sessions, targets, users } from '../db/schema.js';
+import {
+  gearProfiles,
+  rounds,
+  sessions,
+  targets,
+  users,
+} from '../db/schema.js';
+import { photoKeyFor } from '../storageKeys.js';
 
 const TEST_USER = '22222222-2222-4222-8222-000000000000';
 const OTHER_USER = '33333333-3333-4333-8333-000000000000';
@@ -34,6 +41,9 @@ const ids = {
   customTarget: '44444444-4444-4444-8444-000000000006',
   zone: '44444444-4444-4444-8444-000000000007',
   gear: '44444444-4444-4444-8444-000000000008',
+  /** Owned by OTHER_USER. Referencing either of these must not be possible. */
+  otherTarget: '44444444-4444-4444-8444-000000000009',
+  otherGear: '44444444-4444-4444-8444-00000000000a',
 };
 
 beforeAll(async () => {
@@ -54,6 +64,28 @@ beforeAll(async () => {
       ownerId: OTHER_USER,
       shotAt: new Date('2026-01-01T10:00:00Z'),
       syncStatus: 'synced',
+    })
+    .onConflictDoNothing();
+
+  // A private face and a gear profile belonging to the other user. Both exist
+  // so that "the id is real, it just isn't yours" is a case the tests cover —
+  // a nonexistent id fails a foreign key and proves much less.
+  await db
+    .insert(targets)
+    .values({
+      id: ids.otherTarget,
+      ownerId: OTHER_USER,
+      name: "Someone else's face",
+      type: 'custom',
+    })
+    .onConflictDoNothing();
+
+  await db
+    .insert(gearProfiles)
+    .values({
+      id: ids.otherGear,
+      ownerId: OTHER_USER,
+      name: "Someone else's bow",
     })
     .onConflictDoNothing();
 });
@@ -388,6 +420,35 @@ describe('custom targets', () => {
     });
     // A preset is not owned, so this is a 404 before the FK is ever reached.
     expect(res.statusCode).toBe(404);
+  });
+
+  it('answers 409, not 500, when an owned face is still in use', async () => {
+    // This is the case the 404 above never reaches: owned, so the delete runs,
+    // and ON DELETE RESTRICT stops it. The classification lives in dbErrors.ts
+    // and has to read the SQLSTATE through Drizzle's wrapper to get here.
+    const created = await app.inject({
+      method: 'POST',
+      url: '/sessions',
+      payload: {
+        id: 'aaaaaaaa-aaaa-4aaa-8aaa-000000000001',
+        shotAt: '2026-03-01T10:00:00.000Z',
+        rounds: [
+          {
+            id: 'aaaaaaaa-aaaa-4aaa-8aaa-000000000002',
+            targetId: ids.customTarget,
+            roundOrder: 0,
+          },
+        ],
+      },
+    });
+    expect(created.statusCode).toBe(201);
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/targets/${ids.customTarget}`,
+    });
+
+    expect(res.statusCode).toBe(409);
   });
 });
 
@@ -724,5 +785,396 @@ describe('POST /sync/push', () => {
     // Still the other user's, still untouched, despite a far-future timestamp.
     expect(row[0]!.ownerId).toBe(OTHER_USER);
     expect(row[0]!.location).toBeNull();
+  });
+});
+
+/**
+ * Each of these was reachable before the security pass. They are written from
+ * the attacker's side — the request an unfriendly client would actually send —
+ * rather than as unit tests of the validators, because what matters is that
+ * the route refuses it, not that a schema exists somewhere.
+ */
+describe('hostile input', () => {
+  const attacker = (payload: Record<string, unknown>) => ({
+    method: 'POST' as const,
+    url: '/targets',
+    payload,
+  });
+
+  it('rejects zone geometry of the wrong type', async () => {
+    // Stored fine — the CHECK only tests that the keys are present — and then
+    // scored every arrow in the ring as a miss on the device.
+    const res = await app.inject(
+      attacker({
+        id: '99999999-9999-4999-8999-000000000001',
+        name: 'NaN face',
+        zones: [
+          {
+            id: '99999999-9999-4999-8999-000000000002',
+            zoneIndex: 0,
+            scoreValue: 10,
+            shapeType: 'circle',
+            shapeParams: { cx: 'x', cy: null, r: [] },
+          },
+        ],
+      }),
+    );
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects a polygon with an unbounded point list', async () => {
+    const points = Array.from(
+      { length: 5000 },
+      (_, i) => [i / 5000, 0.5] as [number, number],
+    );
+
+    const res = await app.inject(
+      attacker({
+        id: '99999999-9999-4999-8999-000000000003',
+        name: 'Heavy polygon',
+        zones: [
+          {
+            id: '99999999-9999-4999-8999-000000000004',
+            zoneIndex: 0,
+            scoreValue: 10,
+            shapeType: 'polygon',
+            shapeParams: { points },
+          },
+        ],
+      }),
+    );
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects a face with an absurd number of zones', async () => {
+    const zones = Array.from({ length: 500 }, (_, i) => ({
+      id: `99999999-9999-4999-8999-${String(i).padStart(12, '0')}`,
+      zoneIndex: i,
+      scoreValue: 10,
+      shapeType: 'circle',
+      shapeParams: { cx: 0.5, cy: 0.5, r: 0.4 },
+    }));
+
+    const res = await app.inject(
+      attacker({
+        id: '99999999-9999-4999-8999-000000000005',
+        name: 'Too many rings',
+        zones,
+      }),
+    );
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("will not attach another user's private face to a round", async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/sessions',
+      payload: {
+        id: '99999999-9999-4999-8999-000000000006',
+        shotAt: '2026-02-01T10:00:00.000Z',
+        rounds: [
+          {
+            id: '99999999-9999-4999-8999-000000000007',
+            targetId: ids.otherTarget,
+            roundOrder: 0,
+          },
+        ],
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('Unknown target');
+  });
+
+  it("will not attach another user's gear profile to a session", async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/sessions',
+      payload: {
+        id: '99999999-9999-4999-8999-000000000008',
+        shotAt: '2026-02-01T10:00:00.000Z',
+        gearProfileId: ids.otherGear,
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('Unknown gear profile');
+  });
+
+  it('answers a nonexistent target with 400, not a 500 from the foreign key', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/sessions',
+      payload: {
+        id: '99999999-9999-4999-8999-000000000009',
+        shotAt: '2026-02-01T10:00:00.000Z',
+        rounds: [
+          {
+            id: '99999999-9999-4999-8999-00000000000a',
+            targetId: '00000000-0000-4000-8000-0000000000ff',
+            roundOrder: 0,
+          },
+        ],
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('caps the arrows one request may replace', async () => {
+    const arrows = Array.from({ length: 400 }, (_, i) => ({
+      id: `77777777-7777-4777-8777-${String(i).padStart(12, '0')}`,
+      x: 0.5,
+      y: 0.5,
+      scoreValue: 10,
+      shotOrder: i + 1,
+    }));
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/rounds/${ids.round}/arrows`,
+      payload: { arrows },
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("rejects a photo key pointing at another user's object", async () => {
+    // The signed GET used to be generated from whatever this stored, so a key
+    // under someone else's prefix read their photo.
+    const foreignKey = photoKeyFor(OTHER_USER, ids.otherSession);
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/rounds/${ids.round}`,
+      payload: { photoKey: foreignKey },
+    });
+
+    expect(res.statusCode).toBe(400);
+
+    // Asserted on stored state, not just the status: the status alone would
+    // still pass if the route rejected the request for some unrelated reason
+    // while the write went through.
+    const row = await db.select().from(rounds).where(eq(rounds.id, ids.round));
+    expect(row[0]!.photoKey).not.toBe(foreignKey);
+  });
+
+  it('answers a resent id with 409, not a 500 from the primary key', async () => {
+    // Every create takes a client-supplied uuid, so an offline client retrying
+    // after a timeout lands here. It should read as a conflict.
+    const res = await app.inject({
+      method: 'POST',
+      url: '/sessions',
+      payload: {
+        id: ids.session,
+        shotAt: '2026-02-01T10:00:00.000Z',
+      },
+    });
+
+    expect(res.statusCode).toBe(409);
+  });
+
+  it('accepts the key it would have issued itself', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/rounds/${ids.round}`,
+      payload: { photoKey: photoKeyFor(TEST_USER, ids.round) },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().photoKey).toBe(photoKeyFor(TEST_USER, ids.round));
+  });
+});
+
+describe('hostile sync push', () => {
+  const push = (changes: Record<string, unknown>) =>
+    app.inject({ method: 'POST', url: '/sync/push', payload: { changes } });
+
+  it('answers an out-of-range coordinate with 400, not 500', async () => {
+    // Sync was the way round the REST validators: this reached the column's
+    // CHECK, aborted the transaction, and surfaced as an internal error.
+    const res = await push({
+      arrows: {
+        created: [
+          {
+            id: '55555555-5555-4555-8555-000000000001',
+            round_id: ids.round,
+            x: 1e9,
+            y: 0.5,
+            score_value: 10,
+            shot_order: 1,
+            created_at: '2026-01-01T10:00:00.000Z',
+            updated_at: '2026-01-01T10:00:00.000Z',
+          },
+        ],
+        updated: [],
+        deleted: [],
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    // Pins the rejection to the range check rather than any other 400 the
+    // route might produce.
+    expect(res.json().error).toBe('Invalid changes');
+  });
+
+  it('answers an inflated score with 400, not 500', async () => {
+    const res = await push({
+      arrows: {
+        created: [
+          {
+            id: '55555555-5555-4555-8555-000000000002',
+            round_id: ids.round,
+            x: 0.5,
+            y: 0.5,
+            score_value: 2_147_483_647,
+            shot_order: 2,
+            created_at: '2026-01-01T10:00:00.000Z',
+            updated_at: '2026-01-01T10:00:00.000Z',
+          },
+        ],
+        updated: [],
+        deleted: [],
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('Invalid changes');
+  });
+
+  it('rejects zone geometry it would have rejected over REST', async () => {
+    const res = await push({
+      target_zones: {
+        created: [
+          {
+            id: '55555555-5555-4555-8555-000000000003',
+            target_id: ids.customTarget,
+            zone_index: 1,
+            score_value: 10,
+            shape_type: 'circle',
+            shape_params: JSON.stringify({ cx: 'x', cy: 'y', r: 'z' }),
+            created_at: '2026-01-01T10:00:00.000Z',
+            updated_at: '2026-01-01T10:00:00.000Z',
+          },
+        ],
+        updated: [],
+        deleted: [],
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().detail).toBe('Invalid zone geometry');
+  });
+
+  it('rejects an unbounded string rather than storing it', async () => {
+    const res = await push({
+      sessions: {
+        created: [
+          {
+            id: '55555555-5555-4555-8555-000000000004',
+            shot_at: '2026-01-01T10:00:00.000Z',
+            distance_m: null,
+            gear_profile_id: null,
+            equipment_tag: null,
+            location: 'x'.repeat(100_000),
+            notes: null,
+            created_at: '2026-01-01T10:00:00.000Z',
+            updated_at: '2026-01-01T10:00:00.000Z',
+          },
+        ],
+        updated: [],
+        deleted: [],
+      },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('Invalid changes');
+  });
+
+  it("skips a round aimed at another user's private face", async () => {
+    const roundId = '55555555-5555-4555-8555-000000000005';
+
+    const res = await push({
+      rounds: {
+        created: [
+          {
+            id: roundId,
+            session_id: ids.session,
+            target_id: ids.otherTarget,
+            round_order: 90,
+            photo_key: null,
+            created_at: '2026-01-01T10:00:00.000Z',
+            updated_at: '2026-01-01T10:00:00.000Z',
+          },
+        ],
+        updated: [],
+        deleted: [],
+      },
+    });
+
+    // The rest of the push still succeeds — one bad reference must not fail an
+    // archer's whole sync — but the row is not written.
+    expect(res.statusCode).toBe(200);
+
+    const session = await app.inject({
+      method: 'GET',
+      url: `/sessions/${ids.session}`,
+    });
+    const written = session
+      .json()
+      .rounds.some((r: { id: string }) => r.id === roundId);
+    expect(written).toBe(false);
+  });
+
+  it("drops a gear reference that is not the caller's", async () => {
+    const sessionId = '55555555-5555-4555-8555-000000000006';
+
+    const res = await push({
+      sessions: {
+        created: [
+          {
+            id: sessionId,
+            shot_at: '2026-01-01T10:00:00.000Z',
+            distance_m: null,
+            gear_profile_id: ids.otherGear,
+            equipment_tag: null,
+            location: null,
+            notes: null,
+            created_at: '2026-01-01T10:00:00.000Z',
+            updated_at: '2026-01-01T10:00:00.000Z',
+          },
+        ],
+        updated: [],
+        deleted: [],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    const row = await db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.id, sessionId));
+
+    expect(row[0]!.gearProfileId).toBeNull();
+  });
+
+  it('rejects a batch larger than any real device would send', async () => {
+    const created = Array.from({ length: 10_001 }, (_, i) => ({
+      id: `55555555-5555-4555-8555-${String(i).padStart(12, '0')}`,
+      round_id: ids.round,
+      x: 0.5,
+      y: 0.5,
+      score_value: 10,
+      shot_order: i + 1,
+      created_at: '2026-01-01T10:00:00.000Z',
+      updated_at: '2026-01-01T10:00:00.000Z',
+    }));
+
+    const res = await push({ arrows: { created, updated: [], deleted: [] } });
+    expect(res.statusCode).toBe(400);
   });
 });
