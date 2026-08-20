@@ -4,6 +4,7 @@ import React from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { useAuth } from './auth/AuthProvider';
+import AccountScreen from './screens/AccountScreen';
 import ConfirmCodeScreen from './screens/auth/ConfirmCodeScreen';
 import ForgotPasswordScreen from './screens/auth/ForgotPasswordScreen';
 import SignInScreen from './screens/auth/SignInScreen';
@@ -19,6 +20,7 @@ export type RootStackParamList = {
   NewSession: undefined;
   Marking: { sessionId: string; roundId: string };
   SessionDetail: { sessionId: string };
+  Account: undefined;
 };
 
 export type AuthStackParamList = {
@@ -82,6 +84,11 @@ export default function Navigation() {
             name="SessionDetail"
             component={SessionDetailScreen}
             options={{ title: 'Session' }}
+          />
+          <Stack.Screen
+            name="Account"
+            component={AccountScreen}
+            options={{ title: 'Account' }}
           />
         </Stack.Navigator>
       ) : (

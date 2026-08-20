@@ -159,11 +159,17 @@ export default function DashboardScreen({ navigation }: Props) {
               <Text style={[type.title, { color: palette.textPrimary }]}>
                 Your shooting
               </Text>
-              <Button
-                label="New session"
-                variant="filled"
-                onPress={() => navigation.navigate('NewSession')}
-              />
+              <View style={styles.titleActions}>
+                <Button
+                  label="Account"
+                  onPress={() => navigation.navigate('Account')}
+                />
+                <Button
+                  label="New session"
+                  variant="filled"
+                  onPress={() => navigation.navigate('NewSession')}
+                />
+              </View>
             </View>
 
             <SegmentedControl
@@ -507,6 +513,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     paddingBottom: spacing.xl,
   },
+  titleActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
