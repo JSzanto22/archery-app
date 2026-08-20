@@ -20,6 +20,7 @@ import { z } from 'zod';
 
 import { requireAuth } from '../auth.js';
 import { db } from '../db/client.js';
+import { ensureProfile } from '../profile.js';
 import { isCanonicalPhotoKey } from '../storageKeys.js';
 import { parseZoneShape } from '../zoneShapes.js';
 import {
@@ -309,6 +310,19 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
 
     try {
       await db.transaction(async (tx) => {
+        /*
+         * The caller's profile row, before anything that references it.
+         *
+         * Cognito mints users without telling us, and nothing in the app
+         * called GET /me — so a brand new account's first sync failed the
+         * owner_id foreign key and returned a 500. The device retried, hit the
+         * same wall, and reported "sync failed" forever while the archer's
+         * sessions sat on their phone. Inside the transaction, so a push that
+         * rolls back does not leave a profile behind for a sync that never
+         * happened.
+         */
+        await ensureProfile(tx, userId, request.userEmail);
+
         // Parents before children, so a foreign key always has something to point
         // at when a whole session arrives from an offline device in one push.
         const incoming = (table: string) => [

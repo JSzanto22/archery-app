@@ -1178,3 +1178,69 @@ describe('hostile sync push', () => {
     expect(res.statusCode).toBe(400);
   });
 });
+
+/*
+ * Last on purpose.
+ *
+ * This tears the profile row down to reproduce a first sync, which cascades
+ * away everything the fixtures above rely on. Running it earlier does not fail
+ * here — it fails four tests later, somewhere that looks unrelated.
+ */
+describe('a brand new account', () => {
+  it('can sync before anything has called /me', async () => {
+    /*
+     * Cognito mints a user and never tells us, so the profile row is created
+     * by whichever request arrives first. Nothing in the app called /me, which
+     * made that request the first sync — and sessions.owner_id is a NOT NULL
+     * foreign key to users.id, so it failed with a 500. The device retried,
+     * hit the same wall, and reported "sync failed" forever while the archer's
+     * sessions sat on their phone.
+     */
+    // Sessions first: rounds.target_id is ON DELETE RESTRICT, so a custom
+    // target still referenced by a round blocks the cascade from the user.
+    await db.delete(sessions).where(eq(sessions.ownerId, TEST_USER));
+    await db.delete(targets).where(eq(targets.ownerId, TEST_USER));
+    await db.delete(users).where(eq(users.id, TEST_USER));
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/sync/push',
+      payload: {
+        changes: {
+          sessions: {
+            created: [
+              {
+                id: 'bbbbbbbb-bbbb-4bbb-8bbb-000000000001',
+                shot_at: '2026-04-01T10:00:00.000Z',
+                distance_m: 18,
+                gear_profile_id: null,
+                equipment_tag: null,
+                location: null,
+                notes: null,
+                created_at: '2026-04-01T10:00:00.000Z',
+                updated_at: '2026-04-01T10:00:00.000Z',
+              },
+            ],
+            updated: [],
+            deleted: [],
+          },
+        },
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    // The row the foreign key needed, created by the push itself.
+    const profile = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, TEST_USER));
+    expect(profile).toHaveLength(1);
+
+    const stored = await db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.id, 'bbbbbbbb-bbbb-4bbb-8bbb-000000000001'));
+    expect(stored).toHaveLength(1);
+  });
+});
