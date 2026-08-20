@@ -1,0 +1,17 @@
+# Line endings.
+#
+# Prettier is configured for LF and the repo is stored that way, but Git on
+# Windows re-materialises the working tree as CRLF on checkout — so
+# `npm run format:check` failed locally after a branch switch while passing in
+# CI, with `git diff` showing nothing to explain it.
+#
+# Declaring it here makes the working tree match what the tooling expects on
+# every platform.
+* text=auto eol=lf
+
+# Binary assets, never touched.
+*.png binary
+*.jpg binary
+*.ttf binary
+*.otf binary
+*.pdf binary

@@ -11,6 +11,7 @@ import { Q } from '@nozbe/watermelondb';
 import { scoreArrow } from '../scoring/scoring';
 import { collections, database } from './index';
 import Arrow from './models/Arrow';
+import GearProfile from './models/GearProfile';
 import Round from './models/Round';
 import Session from './models/Session';
 import SightMarkRecord from './models/SightMarkRecord';
@@ -315,4 +316,32 @@ export async function sightMarksFor(
     .fetch();
 
   return marks.sort((a, b) => a.distanceM - b.distanceM);
+}
+
+/**
+ * Add a bow.
+ *
+ * Nothing created these before, which meant the gear picker was permanently
+ * empty and sight marks — which hang off a bow — could not be recorded at all.
+ * The backend has had the endpoints since the beginning; the device simply
+ * never called them.
+ */
+export async function createGearProfile(
+  name: string,
+  bowType: string | null = null,
+): Promise<GearProfile> {
+  const trimmed = name.trim();
+  if (trimmed === '') throw new Error('A bow needs a name');
+
+  const now = new Date();
+
+  return database.write(async () =>
+    collections.gearProfiles.create((g: GearProfile) => {
+      g.name = trimmed;
+      g.bowType = bowType;
+      g.notes = null;
+      g.createdAt = now;
+      g.updatedAt = now;
+    }),
+  );
 }

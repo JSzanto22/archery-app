@@ -4,6 +4,7 @@ import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { collections, GearProfile, Target } from '../db';
 import {
+  createGearProfile,
   createSession,
   setSightMark,
   setTargetFaceWidth,
@@ -42,6 +43,10 @@ export default function NewSessionScreen({ navigation }: Props) {
   /** Marks recorded for the selected bow, for the estimate below. */
   const [marks, setMarks] = useState<SightMark[]>([]);
   const [markInput, setMarkInput] = useState('');
+
+  /** Inline bow creation, so an archer is never stuck with an empty picker. */
+  const [addingBow, setAddingBow] = useState(false);
+  const [bowName, setBowName] = useState('');
   const [gearId, setGearId] = useState<string | null>(null);
   const [distance, setDistance] = useState<number | null>(null);
   const [customDistance, setCustomDistance] = useState('');
@@ -97,6 +102,20 @@ export default function NewSessionScreen({ navigation }: Props) {
     gearId && resolvedDistance !== null && Number.isFinite(resolvedDistance)
       ? estimateMark(marks, resolvedDistance)
       : null;
+
+  async function saveBow() {
+    if (bowName.trim() === '') return;
+
+    const created = await createGearProfile(bowName.trim());
+    const allGear = await collections.gearProfiles.query().fetch();
+
+    setGear(allGear);
+    // Select it straight away: an archer adding a bow here is about to shoot
+    // with it.
+    setGearId(created.id);
+    setBowName('');
+    setAddingBow(false);
+  }
 
   async function saveMark() {
     const value = Number.parseFloat(markInput);
@@ -293,7 +312,34 @@ export default function NewSessionScreen({ navigation }: Props) {
                 onPress={() => setGearId(g.id)}
               />
             ))}
+            <Chip
+              label="+ Add bow"
+              selected={false}
+              onPress={() => setAddingBow(true)}
+            />
           </View>
+
+          {addingBow ? (
+            <View style={styles.markRow}>
+              <TextInput
+                style={[inputStyle, styles.markInput]}
+                placeholder="e.g. Hoyt recurve"
+                placeholderTextColor={palette.textMuted}
+                value={bowName}
+                onChangeText={setBowName}
+                autoFocus
+                accessibilityLabel="Name of the bow"
+                returnKeyType="done"
+                onSubmitEditing={() => void saveBow()}
+              />
+              <Button
+                label="Save"
+                variant="tonal"
+                disabled={bowName.trim() === ''}
+                onPress={() => void saveBow()}
+              />
+            </View>
+          ) : null}
 
           {/*
             The sight mark for this distance, at the moment it is needed.

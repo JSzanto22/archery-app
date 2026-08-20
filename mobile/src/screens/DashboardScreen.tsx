@@ -1,6 +1,6 @@
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -22,11 +22,13 @@ import {
   StatTile,
 } from '../components/ui';
 import { useAuth } from '../auth/AuthProvider';
+import { collections } from '../db';
 import { seedDemoData } from '../db/devSeed';
 import {
   personalBestsByRound,
   summariseHandicap,
 } from '../analytics/handicapProgress';
+import FirstRun from '../components/FirstRun';
 import { useDashboardData } from '../hooks/useDashboardData';
 import { formatDate, formatPercent, formatTime, plural } from '../lib/format';
 import { useSync } from '../sync/useSync';
@@ -48,6 +50,18 @@ export default function DashboardScreen({ navigation }: Props) {
 
   const { summaries, groupMap, loading, reload } = useDashboardData(range);
   const [seeding, setSeeding] = useState(false);
+  const [hasGear, setHasGear] = useState(true);
+
+  const checkGear = useCallback(() => {
+    void (async () => {
+      const count = await collections.gearProfiles.query().fetchCount();
+      setHasGear(count > 0);
+    })();
+  }, []);
+
+  useEffect(() => {
+    checkGear();
+  }, [checkGear]);
 
   const { getAccessToken, isSignedIn } = useAuth();
   const sync = useSync({
@@ -106,6 +120,15 @@ export default function DashboardScreen({ navigation }: Props) {
       ),
     [summaries],
   );
+
+  /**
+   * Whether this archer has ever recorded anything.
+   *
+   * Not the filtered set: someone whose only sessions fall outside the current
+   * range has used the app, and showing them the welcome screen again would be
+   * telling a returning user they are new.
+   */
+  const hasAnySession = summaries.length > 0;
 
   const filtered = useMemo(
     () =>
@@ -197,294 +220,343 @@ export default function DashboardScreen({ navigation }: Props) {
         contentContainerStyle={styles.content}
         ListHeaderComponent={
           <View>
-            <View style={styles.titleRow}>
-              <Text style={[type.title, { color: palette.textPrimary }]}>
-                Your shooting
-              </Text>
-              {/*
+            {/*
+              Before the first arrow there is nothing to measure, and a grid of
+              dashes is a worse introduction than none. `hasAnySession` is
+              deliberately not the filtered set: an archer whose only sessions
+              are outside the current range has used the app, and showing them
+              the welcome screen again would be wrong.
+            */}
+            {!loading && !hasAnySession ? (
+              <FirstRun
+                hasGear={hasGear}
+                onGearAdded={checkGear}
+                onStart={() => navigation.navigate('NewSession')}
+              />
+            ) : null}
+
+            {hasAnySession ? (
+              <>
+                <View style={styles.titleRow}>
+                  <Text style={[type.title, { color: palette.textPrimary }]}>
+                    Your shooting
+                  </Text>
+                  {/*
                 Account stays in the top corner deliberately. It is a rare
                 destination, and the hardest-to-reach corner is exactly where a
                 rare destination belongs — the primary action has moved to the
                 bottom bar instead.
               */}
-              <Button
-                label="Account"
-                onPress={() => navigation.navigate('Account')}
-              />
-            </View>
+                  <Button
+                    label="Account"
+                    onPress={() => navigation.navigate('Account')}
+                  />
+                </View>
 
-            <SegmentedControl
-              options={RANGES.map((key) => ({
-                value: key,
-                label: RANGE_LABELS[key],
-              }))}
-              value={range}
-              onChange={setRange}
-            />
-
-            {/* Advanced filters stay collapsed until asked for. */}
-            <View style={styles.filterToggleRow}>
-              <Button
-                label={
-                  showFilters
-                    ? 'Hide filters'
-                    : distanceFilter !== null
-                      ? `Filters · ${distanceFilter} m`
-                      : 'Filters'
-                }
-                variant="text"
-                onPress={() => setShowFilters((v) => !v)}
-              />
-            </View>
-
-            {showFilters ? (
-              <View style={styles.chipRow}>
-                <Chip
-                  label="All distances"
-                  selected={distanceFilter === null}
-                  onPress={() => setDistanceFilter(null)}
+                <SegmentedControl
+                  options={RANGES.map((key) => ({
+                    value: key,
+                    label: RANGE_LABELS[key],
+                  }))}
+                  value={range}
+                  onChange={setRange}
                 />
-                {distances.map((d) => (
-                  <Chip
-                    key={d}
-                    label={`${d} m`}
-                    selected={distanceFilter === d}
-                    onPress={() => setDistanceFilter(d)}
-                  />
-                ))}
-              </View>
-            ) : null}
 
-            {/* Every arrow in the range, on the face it was shot at. The
+                {/* Advanced filters stay collapsed until asked for. */}
+                <View style={styles.filterToggleRow}>
+                  <Button
+                    label={
+                      showFilters
+                        ? 'Hide filters'
+                        : distanceFilter !== null
+                          ? `Filters · ${distanceFilter} m`
+                          : 'Filters'
+                    }
+                    variant="text"
+                    onPress={() => setShowFilters((v) => !v)}
+                  />
+                </View>
+
+                {showFilters ? (
+                  <View style={styles.chipRow}>
+                    <Chip
+                      label="All distances"
+                      selected={distanceFilter === null}
+                      onPress={() => setDistanceFilter(null)}
+                    />
+                    {distances.map((d) => (
+                      <Chip
+                        key={d}
+                        label={`${d} m`}
+                        selected={distanceFilter === d}
+                        onPress={() => setDistanceFilter(d)}
+                      />
+                    ))}
+                  </View>
+                ) : null}
+
+                {/* Every arrow in the range, on the face it was shot at. The
                 cloud's shape is the grouping; its offset is the sight error. */}
-            {groupMap && groupMap.points.length > 0 ? (
-              <View
-                style={[
-                  styles.mapCard,
-                  {
-                    backgroundColor: palette.surface,
-                    borderColor: palette.border,
-                  },
-                ]}
-              >
-                <View style={styles.mapHeader}>
-                  <Text style={[type.label, { color: palette.textSecondary }]}>
-                    {plural(groupMap.points.length, 'arrow')} on the boss
-                  </Text>
-                  <Text style={[type.label, { color: palette.textMuted }]}>
-                    {groupMap.mixedFaces
-                      ? `rings: ${groupMap.targetName}`
-                      : groupMap.targetName}
-                  </Text>
-                </View>
-                <View style={styles.mapFace}>
-                  <TargetFace
-                    zones={groupMap.zones}
-                    marks={groupMap.points}
-                    isPreset={groupMap.isPreset}
-                    aspectRatio={groupMap.aspectRatio}
-                    centroid={groupMap.centroid}
-                    dense
+                {groupMap && groupMap.points.length > 0 ? (
+                  <View
+                    style={[
+                      styles.mapCard,
+                      {
+                        backgroundColor: palette.surface,
+                        borderColor: palette.border,
+                      },
+                    ]}
+                  >
+                    <View style={styles.mapHeader}>
+                      <Text
+                        style={[type.label, { color: palette.textSecondary }]}
+                      >
+                        {plural(groupMap.points.length, 'arrow')} on the boss
+                      </Text>
+                      <Text style={[type.label, { color: palette.textMuted }]}>
+                        {groupMap.mixedFaces
+                          ? `rings: ${groupMap.targetName}`
+                          : groupMap.targetName}
+                      </Text>
+                    </View>
+                    <View style={styles.mapFace}>
+                      <TargetFace
+                        zones={groupMap.zones}
+                        marks={groupMap.points}
+                        isPreset={groupMap.isPreset}
+                        aspectRatio={groupMap.aspectRatio}
+                        centroid={groupMap.centroid}
+                        dense
+                      />
+                    </View>
+                    {bests.dominantBias ? (
+                      <Text
+                        style={[
+                          styles.mapCaption,
+                          { color: palette.textMuted },
+                        ]}
+                      >
+                        Crosshair marks the group centre — sitting{' '}
+                        {bests.dominantBias} of the middle.
+                      </Text>
+                    ) : (
+                      <Text
+                        style={[
+                          styles.mapCaption,
+                          { color: palette.textMuted },
+                        ]}
+                      >
+                        Crosshair marks the group centre.
+                      </Text>
+                    )}
+                  </View>
+                ) : null}
+
+                <View style={styles.tileRow}>
+                  <StatTile
+                    label="Handicap"
+                    value={
+                      handicap.current !== null ? String(handicap.current) : '—'
+                    }
+                    caption={
+                      handicap.current === null
+                        ? 'shoot a full round'
+                        : handicap.change === null
+                          ? (handicap.latest?.roundName ?? 'first round')
+                          : // Lower is better, so a negative change is progress and
+                            // has to read that way — "down from 47", never "-5".
+                            handicap.change < 0
+                            ? `down from ${handicap.current - handicap.change}`
+                            : handicap.change > 0
+                              ? `up from ${handicap.current - handicap.change}`
+                              : 'unchanged'
+                    }
+                  />
+                  <StatTile
+                    label="Best handicap"
+                    value={
+                      handicap.best !== null
+                        ? String(handicap.best.handicap)
+                        : '—'
+                    }
+                    caption={handicap.best?.roundName ?? 'no full round yet'}
                   />
                 </View>
-                {bests.dominantBias ? (
-                  <Text
-                    style={[styles.mapCaption, { color: palette.textMuted }]}
-                  >
-                    Crosshair marks the group centre — sitting{' '}
-                    {bests.dominantBias} of the middle.
-                  </Text>
-                ) : (
-                  <Text
-                    style={[styles.mapCaption, { color: palette.textMuted }]}
-                  >
-                    Crosshair marks the group centre.
-                  </Text>
-                )}
-              </View>
-            ) : null}
 
-            <View style={styles.tileRow}>
-              <StatTile
-                label="Handicap"
-                value={
-                  handicap.current !== null ? String(handicap.current) : '—'
-                }
-                caption={
-                  handicap.current === null
-                    ? 'shoot a full round'
-                    : handicap.change === null
-                      ? (handicap.latest?.roundName ?? 'first round')
-                      : // Lower is better, so a negative change is progress and
-                        // has to read that way — "down from 47", never "-5".
-                        handicap.change < 0
-                        ? `down from ${handicap.current - handicap.change}`
-                        : handicap.change > 0
-                          ? `up from ${handicap.current - handicap.change}`
-                          : 'unchanged'
-                }
-              />
-              <StatTile
-                label="Best handicap"
-                value={
-                  handicap.best !== null ? String(handicap.best.handicap) : '—'
-                }
-                caption={handicap.best?.roundName ?? 'no full round yet'}
-              />
-            </View>
-
-            {/*
+                {/*
               Grouping stays, one row down and in real units. It is a genuine
               measure, but a session-sized sample of it is mostly noise — so it
               informs rather than leads.
             */}
-            <View style={styles.tileRow}>
-              <StatTile
-                label="Average arrow"
-                value={
-                  bests.overallAverage !== null
-                    ? bests.overallAverage.toFixed(2)
-                    : '—'
-                }
-                caption="per arrow, this range"
-              />
-              <StatTile
-                label="Tightest group"
-                value={
-                  bests.tightestGroup?.groupingCm != null
-                    ? formatDistance(bests.tightestGroup.groupingCm, units)
-                    : '—'
-                }
-                caption={
-                  bests.tightestGroup?.groupingCm != null
-                    ? 'spread from centre'
-                    : 'set a face width'
-                }
-              />
-            </View>
+                <View style={styles.tileRow}>
+                  <StatTile
+                    label="Average arrow"
+                    value={
+                      bests.overallAverage !== null
+                        ? bests.overallAverage.toFixed(2)
+                        : '—'
+                    }
+                    caption="per arrow, this range"
+                  />
+                  <StatTile
+                    label="Tightest group"
+                    value={
+                      bests.tightestGroup?.groupingCm != null
+                        ? formatDistance(bests.tightestGroup.groupingCm, units)
+                        : '—'
+                    }
+                    caption={
+                      bests.tightestGroup?.groupingCm != null
+                        ? 'spread from centre'
+                        : 'set a face width'
+                    }
+                  />
+                </View>
 
-            <View style={styles.tileRow}>
-              <StatTile
-                label={`${bests.distribution[0]?.score ?? 10}s hit`}
-                value={String(bests.totalTopScores)}
-                caption={
-                  bests.totalArrows > 0
-                    ? `${Math.round(
-                        (bests.totalTopScores / bests.totalArrows) * 100,
-                      )}% of arrows`
-                    : 'top ring'
-                }
-              />
-              <StatTile
-                label="Group sits"
-                value={bests.dominantBias ?? 'centred'}
-                caption={
-                  bests.dominantBias
-                    ? 'most sessions — check sight'
-                    : 'no consistent bias'
-                }
-              />
-            </View>
+                <View style={styles.tileRow}>
+                  <StatTile
+                    label={`${bests.distribution[0]?.score ?? 10}s hit`}
+                    value={String(bests.totalTopScores)}
+                    caption={
+                      bests.totalArrows > 0
+                        ? `${Math.round(
+                            (bests.totalTopScores / bests.totalArrows) * 100,
+                          )}% of arrows`
+                        : 'top ring'
+                    }
+                  />
+                  <StatTile
+                    label="Group sits"
+                    value={bests.dominantBias ?? 'centred'}
+                    caption={
+                      bests.dominantBias
+                        ? 'most sessions — check sight'
+                        : 'no consistent bias'
+                    }
+                  />
+                </View>
 
-            {/* The counting stats don't earn tiles — one quiet line. */}
-            <View style={styles.countRow}>
-              <Text style={[styles.countLine, { color: palette.textMuted }]}>
-                {plural(bests.totalSessions, 'session')} ·{' '}
-                {plural(bests.totalArrows, 'arrow')} ·{' '}
-                {RANGE_LABELS[range].toLowerCase()}
-              </Text>
-              <Button
-                label={units === 'metric' ? 'cm' : 'inches'}
-                variant="text"
-                onPress={toggleUnits}
-              />
-            </View>
+                {/* The counting stats don't earn tiles — one quiet line. */}
+                <View style={styles.countRow}>
+                  <Text
+                    style={[styles.countLine, { color: palette.textMuted }]}
+                  >
+                    {plural(bests.totalSessions, 'session')} ·{' '}
+                    {plural(bests.totalArrows, 'arrow')} ·{' '}
+                    {RANGE_LABELS[range].toLowerCase()}
+                  </Text>
+                  <Button
+                    label={units === 'metric' ? 'cm' : 'inches'}
+                    variant="text"
+                    onPress={toggleUnits}
+                  />
+                </View>
 
-            {/*
+                {/*
               Sync state, stated plainly. The archer's question is never "did
               the protocol succeed" — it is "are my arrows safe if I lose this
               phone", so the copy answers that instead.
             */}
-            {/*
+                {/*
               Personal bests, one per round. A best only means anything inside
               a format — 546 is a fine Portsmouth and a poor WA 720 — which is
               why these are listed by round rather than reduced to one number.
             */}
-            {roundBests.length > 0 ? (
-              <View style={styles.bestsRow}>
-                {roundBests.slice(0, 4).map((best) => (
-                  <Chip
-                    key={best.roundId}
-                    label={`${best.roundName} · ${best.score}`}
-                    selected={false}
-                    onPress={() => setDistanceFilter(null)}
-                  />
-                ))}
-              </View>
-            ) : null}
+                {roundBests.length > 0 ? (
+                  <View style={styles.bestsRow}>
+                    {roundBests.slice(0, 4).map((best) => (
+                      <Chip
+                        key={best.roundId}
+                        label={`${best.roundName} · ${best.score}`}
+                        selected={false}
+                        onPress={() => setDistanceFilter(null)}
+                      />
+                    ))}
+                  </View>
+                ) : null}
 
-            {isSignedIn ? (
-              <View style={styles.syncRow}>
-                <Text
-                  style={[styles.countLine, { color: palette.textMuted }]}
-                  numberOfLines={2}
-                >
-                  {sync.state === 'syncing'
-                    ? 'Backing up…'
-                    : sync.error
-                      ? sync.error
-                      : sync.lastSyncedAt
-                        ? `Backed up ${formatTime(sync.lastSyncedAt)}`
-                        : 'Not backed up yet'}
-                </Text>
-                <Button
-                  label={sync.state === 'syncing' ? 'Syncing…' : 'Back up now'}
-                  variant="text"
-                  disabled={sync.state === 'syncing'}
-                  onPress={() => void sync.sync()}
-                />
-              </View>
-            ) : null}
+                {isSignedIn ? (
+                  <View style={styles.syncRow}>
+                    <Text
+                      style={[styles.countLine, { color: palette.textMuted }]}
+                      numberOfLines={2}
+                    >
+                      {sync.state === 'syncing'
+                        ? 'Backing up…'
+                        : sync.error
+                          ? sync.error
+                          : sync.lastSyncedAt
+                            ? `Backed up ${formatTime(sync.lastSyncedAt)}`
+                            : 'Not backed up yet'}
+                    </Text>
+                    <Button
+                      label={
+                        sync.state === 'syncing' ? 'Syncing…' : 'Back up now'
+                      }
+                      variant="text"
+                      disabled={sync.state === 'syncing'}
+                      onPress={() => void sync.sync()}
+                    />
+                  </View>
+                ) : null}
 
-            {bests.distribution.length > 0 ? (
-              <>
-                <SectionHeader title="Arrows per ring" />
-                <ScoreDistribution
-                  distribution={bests.distribution}
-                  maxScore={bests.distribution[0]?.score ?? 10}
-                  isPreset={groupMap?.isPreset ?? true}
+                {bests.distribution.length > 0 ? (
+                  <>
+                    <SectionHeader title="Arrows per ring" />
+                    <ScoreDistribution
+                      distribution={bests.distribution}
+                      maxScore={bests.distribution[0]?.score ?? 10}
+                      isPreset={groupMap?.isPreset ?? true}
+                    />
+                  </>
+                ) : null}
+
+                {/* Two measures, two charts. Never a shared axis. */}
+                <TrendChart
+                  title="Average score per arrow"
+                  points={scorePoints}
+                  color={palette.series1}
+                  format={(v) => v.toFixed(2)}
+                  // Top ring of the face actually shot — 10 on a WA face, 12 on a
+                  // 3D animal. Never assume 10.
+                  domain={{ min: 0, max: topRingScore }}
                 />
+
+                <TrendChart
+                  title={`Group spread${
+                    groupingUnitLabel ? ` (${groupingUnitLabel})` : ''
+                  }`}
+                  points={groupingPoints}
+                  color={palette.series2}
+                  format={groupingFormatter}
+                  lowerIsBetter
+                  // A spread cannot be negative.
+                  domain={{ min: 0 }}
+                />
+
+                <SectionHeader title="Sessions" />
               </>
             ) : null}
-
-            {/* Two measures, two charts. Never a shared axis. */}
-            <TrendChart
-              title="Average score per arrow"
-              points={scorePoints}
-              color={palette.series1}
-              format={(v) => v.toFixed(2)}
-              // Top ring of the face actually shot — 10 on a WA face, 12 on a
-              // 3D animal. Never assume 10.
-              domain={{ min: 0, max: topRingScore }}
-            />
-
-            <TrendChart
-              title={`Group spread${
-                groupingUnitLabel ? ` (${groupingUnitLabel})` : ''
-              }`}
-              points={groupingPoints}
-              color={palette.series2}
-              format={groupingFormatter}
-              lowerIsBetter
-              // A spread cannot be negative.
-              domain={{ min: 0 }}
-            />
-
-            <SectionHeader title="Sessions" />
           </View>
         }
         ListEmptyComponent={
-          loading ? null : (
+          loading ? null : !hasAnySession ? (
+            /*
+              First run is already saying all of this above, so the only thing
+              worth keeping here is the developer seed — which is most useful
+              on exactly this screen, a fresh install with nothing in it.
+            */
+            __DEV__ ? (
+              <View style={styles.devSeed}>
+                <Button
+                  label={seeding ? 'Loading…' : 'Load demo data'}
+                  variant="tonal"
+                  disabled={seeding}
+                  onPress={() => void onSeedDemo()}
+                />
+              </View>
+            ) : null
+          ) : (
             <View style={styles.empty}>
               {/* Dev only: an empty dashboard shows none of what the app does,
                   which makes the UI impossible to judge or screenshot. */}
