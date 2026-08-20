@@ -49,6 +49,10 @@ const roundInput = z.object({
 const sessionInput = z.object({
   id: z.string().uuid(),
   shotAt: z.coerce.date(),
+  // A catalogue id from the client, not a foreign key. Bounded and otherwise
+  // opaque: the server has no list to validate against, and holding one would
+  // mean redeploying the API to add a round.
+  roundFormatId: z.string().trim().max(64).nullable().optional(),
   // 9999.99 is what NUMERIC(6,2) holds; anything larger became a 500 from the
   // database rather than a 400 from validation.
   distanceM: z.number().positive().max(9999).nullable().optional(),

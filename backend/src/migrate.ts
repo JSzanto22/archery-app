@@ -43,6 +43,7 @@ const FILES = [
   'migrations/0001_init.sql',
   'seeds/0001_preset_targets.sql',
   'migrations/0002_target_face_dimensions.sql',
+  'migrations/0003_session_round_format.sql',
 ] as const;
 
 /*

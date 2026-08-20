@@ -136,6 +136,7 @@ export function useDashboardData(range: RangeKey): DashboardData {
         return {
           sessionId: session.id,
           shotAt: session.shotAt,
+          roundFormatId: session.roundFormatId,
           distanceM: session.distanceM,
           gearLabel:
             (session.gearProfileId

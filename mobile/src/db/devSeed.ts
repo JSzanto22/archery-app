@@ -41,6 +41,14 @@ function clamp01(v: number): number {
 
 interface Scenario {
   targetId: string;
+  /**
+   * The round these arrows make up.
+   *
+   * The end count below has to match it exactly or the shoot carries no
+   * handicap — which is the rule working, but makes demo data that cannot
+   * demonstrate the feature it exists to show.
+   */
+  roundFormatId: string | null;
   distanceM: number;
   location: string;
   ends: number;
@@ -55,9 +63,11 @@ interface Scenario {
 const SCENARIOS: Scenario[] = [
   {
     targetId: WA_122,
+    roundFormatId: 'wa720-70',
     distanceM: 70,
     location: 'County Field, main line',
-    ends: 6,
+    // 12 x 6 = 72 arrows, which is the WA 720 exactly.
+    ends: 12,
     arrowsPerEnd: 6,
     sigmaCm: 11,
     faceWidthCm: 122,
@@ -66,9 +76,11 @@ const SCENARIOS: Scenario[] = [
   },
   {
     targetId: WA_40_3SPOT,
+    roundFormatId: 'wa18',
     distanceM: 18,
     location: 'Riverside Indoor Range',
-    ends: 10,
+    // 20 x 3 = 60 arrows, which is a WA 18.
+    ends: 20,
     arrowsPerEnd: 3,
     sigmaCm: 2.8,
     faceWidthCm: 40,
@@ -130,6 +142,7 @@ export async function seedDemoData(sessionCount = 14): Promise<DevSeedResult> {
 
       const session = await collections.sessions.create((s: Session) => {
         s.shotAt = shotAt;
+        s.roundFormatId = scenario.roundFormatId;
         s.distanceM = scenario.distanceM;
         s.gearProfileId = null;
         s.equipmentTag = null;

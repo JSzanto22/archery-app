@@ -23,6 +23,8 @@ export interface NewSessionInput {
   location: string | null;
   notes: string | null;
   targetId: string;
+  /** A round format id from src/rounds/catalogue.ts, or null for practice. */
+  roundFormatId: string | null;
 }
 
 /**
@@ -40,6 +42,7 @@ export async function createSession(
 
     const session = await collections.sessions.create((s: Session) => {
       s.shotAt = input.shotAt;
+      s.roundFormatId = input.roundFormatId;
       s.distanceM = input.distanceM;
       s.gearProfileId = input.gearProfileId;
       s.equipmentTag = input.equipmentTag;

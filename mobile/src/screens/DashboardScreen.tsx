@@ -23,6 +23,10 @@ import {
 } from '../components/ui';
 import { useAuth } from '../auth/AuthProvider';
 import { seedDemoData } from '../db/devSeed';
+import {
+  personalBestsByRound,
+  summariseHandicap,
+} from '../analytics/handicapProgress';
 import { useDashboardData } from '../hooks/useDashboardData';
 import { formatDate, formatPercent, formatTime, plural } from '../lib/format';
 import { useSync } from '../sync/useSync';
@@ -64,6 +68,44 @@ export default function DashboardScreen({ navigation }: Props) {
       setSeeding(false);
     }
   }, [reload]);
+
+  /*
+   * Handicap leads the dashboard because it is the only figure here that is
+   * comparable between a 70 m shoot and an 18 m one. Average arrow score,
+   * which used to lead, is not: it made the headline chart compare quantities
+   * that are not alike.
+   *
+   * Computed over every summary rather than the distance-filtered set — a
+   * handicap is already distance-independent, so filtering it by distance
+   * would throw away exactly the property that makes it worth showing.
+   */
+  const handicap = useMemo(
+    () =>
+      summariseHandicap(
+        summaries.map((s) => ({
+          sessionId: s.sessionId,
+          shotAt: s.shotAt,
+          roundFormatId: s.roundFormatId,
+          arrowCount: s.arrowCount,
+          totalScore: s.totalScore,
+        })),
+      ),
+    [summaries],
+  );
+
+  const roundBests = useMemo(
+    () =>
+      personalBestsByRound(
+        summaries.map((s) => ({
+          sessionId: s.sessionId,
+          shotAt: s.shotAt,
+          roundFormatId: s.roundFormatId,
+          arrowCount: s.arrowCount,
+          totalScore: s.totalScore,
+        })),
+      ),
+    [summaries],
+  );
 
   const filtered = useMemo(
     () =>
@@ -265,33 +307,59 @@ export default function DashboardScreen({ navigation }: Props) {
 
             <View style={styles.tileRow}>
               <StatTile
+                label="Handicap"
+                value={
+                  handicap.current !== null ? String(handicap.current) : '—'
+                }
+                caption={
+                  handicap.current === null
+                    ? 'shoot a full round'
+                    : handicap.change === null
+                      ? (handicap.latest?.roundName ?? 'first round')
+                      : // Lower is better, so a negative change is progress and
+                        // has to read that way — "down from 47", never "-5".
+                        handicap.change < 0
+                        ? `down from ${handicap.current - handicap.change}`
+                        : handicap.change > 0
+                          ? `up from ${handicap.current - handicap.change}`
+                          : 'unchanged'
+                }
+              />
+              <StatTile
+                label="Best handicap"
+                value={
+                  handicap.best !== null ? String(handicap.best.handicap) : '—'
+                }
+                caption={handicap.best?.roundName ?? 'no full round yet'}
+              />
+            </View>
+
+            {/*
+              Grouping stays, one row down and in real units. It is a genuine
+              measure, but a session-sized sample of it is mostly noise — so it
+              informs rather than leads.
+            */}
+            <View style={styles.tileRow}>
+              <StatTile
                 label="Average arrow"
                 value={
                   bests.overallAverage !== null
                     ? bests.overallAverage.toFixed(2)
                     : '—'
                 }
-                caption={
-                  bests.bestAverage?.averageScore
-                    ? `best ${bests.bestAverage.averageScore.toFixed(2)}`
-                    : 'per arrow'
-                }
+                caption="per arrow, this range"
               />
               <StatTile
                 label="Tightest group"
                 value={
-                  // Real distance leads; the percentage is the caption. A
-                  // percentage alone is not comparable between face sizes.
                   bests.tightestGroup?.groupingCm != null
                     ? formatDistance(bests.tightestGroup.groupingCm, units)
-                    : bests.tightestGroup?.grouping != null
-                      ? formatPercent(bests.tightestGroup.grouping)
-                      : '—'
+                    : '—'
                 }
                 caption={
-                  bests.tightestGroup?.grouping != null
-                    ? `${formatPercent(bests.tightestGroup.grouping)} of face`
-                    : 'spread from centre'
+                  bests.tightestGroup?.groupingCm != null
+                    ? 'spread from centre'
+                    : 'set a face width'
                 }
               />
             </View>
@@ -338,6 +406,24 @@ export default function DashboardScreen({ navigation }: Props) {
               the protocol succeed" — it is "are my arrows safe if I lose this
               phone", so the copy answers that instead.
             */}
+            {/*
+              Personal bests, one per round. A best only means anything inside
+              a format — 546 is a fine Portsmouth and a poor WA 720 — which is
+              why these are listed by round rather than reduced to one number.
+            */}
+            {roundBests.length > 0 ? (
+              <View style={styles.bestsRow}>
+                {roundBests.slice(0, 4).map((best) => (
+                  <Chip
+                    key={best.roundId}
+                    label={`${best.roundName} · ${best.score}`}
+                    selected={false}
+                    onPress={() => setDistanceFilter(null)}
+                  />
+                ))}
+              </View>
+            ) : null}
+
             {isSignedIn ? (
               <View style={styles.syncRow}>
                 <Text
@@ -512,6 +598,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
     paddingBottom: spacing.xl,
+  },
+  bestsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
   },
   titleActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   titleRow: {

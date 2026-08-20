@@ -19,6 +19,8 @@ import { Point } from '../scoring/geometry';
 export interface SessionArrows {
   sessionId: string;
   shotAt: Date;
+  /** Named round shot, or null for freeform practice. */
+  roundFormatId: string | null;
   distanceM: number | null;
   gearLabel: string | null;
   location: string | null;
@@ -37,6 +39,7 @@ export interface SessionArrows {
 export interface SessionSummary {
   sessionId: string;
   shotAt: Date;
+  roundFormatId: string | null;
   distanceM: number | null;
   gearLabel: string | null;
   location: string | null;
@@ -86,6 +89,7 @@ export function summarizeSession(session: SessionArrows): SessionSummary {
   return {
     sessionId: session.sessionId,
     shotAt: session.shotAt,
+    roundFormatId: session.roundFormatId,
     distanceM: session.distanceM,
     gearLabel: session.gearLabel,
     location: session.location,

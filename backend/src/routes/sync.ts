@@ -258,6 +258,7 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
         sessions: bucket(result.sessionRows, since, (s) => ({
           id: s.id,
           shot_at: iso(s.shotAt),
+          round_format_id: s.roundFormatId,
           distance_m: s.distanceM,
           gear_profile_id: s.gearProfileId,
           equipment_tag: s.equipmentTag,
@@ -535,6 +536,8 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
               id: uuid(raw.id),
               ownerId: userId,
               shotAt: date(raw.shot_at),
+              // A catalogue id, so bounded like any other client string.
+              roundFormatId: boundedStr(raw.round_format_id, 64),
               distanceM:
                 raw.distance_m === null || raw.distance_m === undefined
                   ? null
@@ -555,6 +558,7 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
           sessions.id,
           {
             shotAt: sql`excluded.shot_at`,
+            roundFormatId: sql`excluded.round_format_id`,
             distanceM: sql`excluded.distance_m`,
             gearProfileId: sql`excluded.gear_profile_id`,
             equipmentTag: sql`excluded.equipment_tag`,

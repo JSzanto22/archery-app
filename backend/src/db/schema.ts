@@ -131,6 +131,14 @@ export const sessions = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     shotAt: timestamp('shot_at', { withTimezone: true }).notNull(),
+    /**
+     * Which named round this was, or NULL for freeform practice.
+     *
+     * The id of a format defined in the client's catalogue rather than a
+     * foreign key: round formats ship with the app and never change per user,
+     * so a table of them would be a constant to keep in sync.
+     */
+    roundFormatId: text('round_format_id'),
     /*
      * `mode: 'number'` on every NUMERIC column.
      *

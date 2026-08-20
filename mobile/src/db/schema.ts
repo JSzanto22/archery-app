@@ -22,7 +22,7 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb';
 
 export default appSchema({
   // Bump alongside a migration in ./migrations.ts — never on its own.
-  version: 2,
+  version: 3,
   tables: [
     tableSchema({
       name: 'gear_profiles',
@@ -73,6 +73,14 @@ export default appSchema({
       name: 'sessions',
       columns: [
         { name: 'shot_at', type: 'number', isIndexed: true },
+        /*
+         * Which named round this was, or null for freeform practice.
+         *
+         * The id of an entry in src/rounds/catalogue.ts rather than a foreign
+         * key: round formats are fixed definitions shipped with the app, not
+         * user data, so storing them as rows would mean syncing a constant.
+         */
+        { name: 'round_format_id', type: 'string', isOptional: true },
         { name: 'distance_m', type: 'number', isOptional: true },
         {
           name: 'gear_profile_id',

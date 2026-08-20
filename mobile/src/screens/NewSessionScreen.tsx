@@ -5,6 +5,7 @@ import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { collections, GearProfile, Target } from '../db';
 import { createSession, setTargetFaceWidth } from '../db/actions';
 import { Button, Chip, Screen } from '../components/ui';
+import { ROUNDS, describe as describeRound } from '../rounds/catalogue';
 import { RootStackParamList } from '../navigation';
 import { radius, spacing, type, usePalette } from '../theme';
 
@@ -19,6 +20,11 @@ export default function NewSessionScreen({ navigation }: Props) {
   const [gear, setGear] = useState<GearProfile[]>([]);
 
   const [targetId, setTargetId] = useState<string | null>(null);
+  /**
+   * Null means freeform practice, which is a first-class choice — most range
+   * time is not a scored round, and forcing one would make the app lie.
+   */
+  const [roundFormatId, setRoundFormatId] = useState<string | null>(null);
   const [gearId, setGearId] = useState<string | null>(null);
   const [distance, setDistance] = useState<number | null>(null);
   const [customDistance, setCustomDistance] = useState('');
@@ -61,6 +67,11 @@ export default function NewSessionScreen({ navigation }: Props) {
     !saving &&
     (resolvedDistance === null || Number.isFinite(resolvedDistance));
 
+  const selectedRound =
+    roundFormatId === null
+      ? null
+      : (ROUNDS.find((r) => r.id === roundFormatId) ?? null);
+
   const onStart = async () => {
     if (!targetId || saving) return;
     setSaving(true);
@@ -90,6 +101,7 @@ export default function NewSessionScreen({ navigation }: Props) {
         location: location.trim() || null,
         notes: notes.trim() || null,
         targetId,
+        roundFormatId,
       });
 
       // Replace rather than push: backing out of marking should land on the
@@ -114,6 +126,28 @@ export default function NewSessionScreen({ navigation }: Props) {
 
   return (
     <Screen>
+      <FieldLabel text="Round" />
+      <View style={styles.chipRow}>
+        <Chip
+          label="Practice"
+          selected={roundFormatId === null}
+          onPress={() => setRoundFormatId(null)}
+        />
+        {ROUNDS.map((round) => (
+          <Chip
+            key={round.id}
+            label={round.name}
+            selected={roundFormatId === round.id}
+            onPress={() => setRoundFormatId(round.id)}
+          />
+        ))}
+      </View>
+      <Text style={[styles.hint, { color: palette.textMuted }]}>
+        {selectedRound
+          ? `${describeRound(selectedRound)}. Shoot all of it and this scores a handicap.`
+          : 'Freeform practice. Arrows are recorded, but a handicap needs a full round.'}
+      </Text>
+
       <FieldLabel text="Target face" />
       <View style={styles.chipRow}>
         {targets.map((t) => (
