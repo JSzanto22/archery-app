@@ -2,6 +2,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
+import Scorecard, { type ScorecardEnd } from '../components/Scorecard';
 import TargetFace from '../components/TargetFace';
 import { Banner, Button, Screen, SectionHeader } from '../components/ui';
 import { Round, Session, collections } from '../db';
@@ -9,6 +10,7 @@ import { deleteSession } from '../db/actions';
 import { isMultiSpot, resolveFaceGeometry } from '../db/faceGeometry';
 import { formatLongDate, formatPercent, plural } from '../lib/format';
 import { groupSpread, groupSpreadMultiSpot } from '../scoring/grouping';
+import { countInnerTens, hasInnerTen } from '../scoring/innerTen';
 import { Zone } from '../scoring/scoring';
 import { RootStackParamList } from '../navigation';
 import { radius, spacing, type, usePalette } from '../theme';
@@ -24,6 +26,10 @@ interface RoundView {
   marks: Array<{ id: string; x: number; y: number; scoreValue: number }>;
   score: number;
   grouping: number | null;
+  /** Xs in this end. */
+  innerTens: number;
+  /** False for faces with no X ring, so the column can be dropped. */
+  hasInnerTenRing: boolean;
 }
 
 export default function SessionDetailScreen({ navigation, route }: Props) {
@@ -86,6 +92,8 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
             scoreValue: a.scoreValue,
           })),
           score: arrows.reduce((sum, a) => sum + a.scoreValue, 0),
+          innerTens: countInnerTens(zones, points),
+          hasInnerTenRing: hasInnerTen(zones),
           grouping: isMultiSpot(face)
             ? groupSpreadMultiSpot(points, face.aimPoints, { aspectRatio })
             : groupSpread(points, { aspectRatio }),
@@ -95,6 +103,30 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
 
     setRounds(views);
   }, [sessionId]);
+
+  /**
+   * The rounds as scorecard rows.
+   *
+   * `arrowsPerEnd` is the widest end actually shot rather than the round's
+   * nominal figure: a session abandoned half way through an end should still
+   * produce a card with the right number of columns.
+   */
+  const scorecard = {
+    ends: rounds
+      .filter((view) => view.marks.length > 0)
+      .map((view): ScorecardEnd => ({
+        number: view.round.roundOrder,
+        scores: view.marks.map((m) => m.scoreValue),
+        innerTens: view.innerTens,
+      })),
+    arrowsPerEnd: rounds.reduce(
+      (widest, view) => Math.max(widest, view.marks.length),
+      0,
+    ),
+    // Dropped entirely when no face in the session has an X ring, rather than
+    // shown as a column of blanks.
+    showInnerTens: rounds.some((view) => view.hasInnerTenRing),
+  };
 
   useEffect(() => {
     void load();
@@ -159,6 +191,24 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
             : ''}
         </Text>
       </View>
+
+      {/*
+        The scorecard first, the plots below it.
+        
+        This is the summary an archer recognises and can check against the
+        sheet on the wall; the per-end faces underneath are the detail behind
+        each row.
+      */}
+      {scorecard.ends.length > 0 ? (
+        <View>
+          <SectionHeader title="Scorecard" />
+          <Scorecard
+            ends={scorecard.ends}
+            arrowsPerEnd={scorecard.arrowsPerEnd}
+            showInnerTens={scorecard.showInnerTens}
+          />
+        </View>
+      ) : null}
 
       {rounds.map((view) => (
         <View key={view.round.id}>
