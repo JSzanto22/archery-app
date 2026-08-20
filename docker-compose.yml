@@ -29,7 +29,8 @@ services:
       - ./backend/db/migrations/0002_target_face_dimensions.sql:/docker-entrypoint-initdb.d/03_target_face_dimensions.sql:ro
       - ./backend/db/migrations/0003_session_round_format.sql:/docker-entrypoint-initdb.d/04_session_round_format.sql:ro
       - ./backend/db/migrations/0004_arrow_set_size.sql:/docker-entrypoint-initdb.d/05_arrow_set_size.sql:ro
-      - ./backend/db/seeds/0002_demo_data.sql:/docker-entrypoint-initdb.d/06_demo_data.sql:ro
+      - ./backend/db/migrations/0005_sight_marks.sql:/docker-entrypoint-initdb.d/06_sight_marks.sql:ro
+      - ./backend/db/seeds/0002_demo_data.sql:/docker-entrypoint-initdb.d/07_demo_data.sql:ro
     healthcheck:
       test:
         [

@@ -22,7 +22,7 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb';
 
 export default appSchema({
   // Bump alongside a migration in ./migrations.ts — never on its own.
-  version: 4,
+  version: 5,
   tables: [
     tableSchema({
       name: 'gear_profiles',
@@ -120,6 +120,20 @@ export default appSchema({
       ],
     }),
 
+    tableSchema({
+      name: 'sight_marks',
+      columns: [
+        // Marks belong to a bow, not to an archer: a different riser or a
+        // different draw weight is a different set of numbers entirely.
+        { name: 'gear_profile_id', type: 'string', isIndexed: true },
+        { name: 'distance_m', type: 'number' },
+        /** The archer's own reading — mm, clicks, or a tape number. */
+        { name: 'mark', type: 'number' },
+        { name: 'notes', type: 'string', isOptional: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
     tableSchema({
       name: 'arrows',
       columns: [

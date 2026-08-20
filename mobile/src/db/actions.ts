@@ -13,6 +13,7 @@ import { collections, database } from './index';
 import Arrow from './models/Arrow';
 import Round from './models/Round';
 import Session from './models/Session';
+import SightMarkRecord from './models/SightMarkRecord';
 import Target from './models/Target';
 
 export interface NewSessionInput {
@@ -262,4 +263,56 @@ export async function deleteSession(session: Session): Promise<void> {
     }
     await session.markAsDeleted();
   });
+}
+
+/**
+ * Record or update the sight mark for a distance on a bow.
+ *
+ * One mark per distance per bow: re-recording a distance replaces it rather
+ * than adding a second row. Two marks for 50 m is exactly the problem a paper
+ * notebook already has — you cannot tell which is current.
+ */
+export async function setSightMark(
+  gearProfileId: string,
+  distanceM: number,
+  mark: number,
+): Promise<SightMarkRecord> {
+  const existing = await collections.sightMarks
+    .query(
+      Q.where('gear_profile_id', gearProfileId),
+      Q.where('distance_m', distanceM),
+    )
+    .fetch();
+
+  const now = new Date();
+  const current = existing[0];
+
+  return database.write(async () => {
+    if (current) {
+      return current.update((m: SightMarkRecord) => {
+        m.mark = mark;
+        m.updatedAt = now;
+      });
+    }
+
+    return collections.sightMarks.create((m: SightMarkRecord) => {
+      m.gearProfileId = gearProfileId;
+      m.distanceM = distanceM;
+      m.mark = mark;
+      m.notes = null;
+      m.createdAt = now;
+      m.updatedAt = now;
+    });
+  });
+}
+
+/** Every mark recorded for a bow, nearest distance first. */
+export async function sightMarksFor(
+  gearProfileId: string,
+): Promise<SightMarkRecord[]> {
+  const marks = await collections.sightMarks
+    .query(Q.where('gear_profile_id', gearProfileId))
+    .fetch();
+
+  return marks.sort((a, b) => a.distanceM - b.distanceM);
 }

@@ -123,6 +123,39 @@ export const targetZones = pgTable(
   ],
 );
 
+/**
+ * Sight marks, keyed to a bow.
+ *
+ * `mark` is unitless on purpose — sights are read in millimetres, in clicks or
+ * off a printed tape, and normalising would mean guessing which.
+ */
+export const sightMarks = pgTable(
+  'sight_marks',
+  {
+    id: uuid('id').primaryKey(),
+    gearProfileId: uuid('gear_profile_id')
+      .notNull()
+      .references(() => gearProfiles.id, { onDelete: 'cascade' }),
+    distanceM: numeric('distance_m', {
+      precision: 6,
+      scale: 2,
+      mode: 'number',
+    }).notNull(),
+    mark: numeric('mark', { precision: 8, scale: 3, mode: 'number' }).notNull(),
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('sight_marks_unique_distance').on(t.gearProfileId, t.distanceM),
+    index('sight_marks_gear_idx').on(t.gearProfileId, t.distanceM),
+  ],
+);
+
 export const sessions = pgTable(
   'sessions',
   {

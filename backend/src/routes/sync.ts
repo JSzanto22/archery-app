@@ -28,6 +28,7 @@ import {
   gearProfiles,
   rounds,
   sessions,
+  sightMarks,
   targetZones,
   targets,
 } from '../db/schema.js';
@@ -162,6 +163,26 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
             )
         : [];
 
+      const ownedGear = await tx
+        .select({ id: gearProfiles.id })
+        .from(gearProfiles)
+        .where(eq(gearProfiles.ownerId, userId));
+
+      const sightMarkRows = ownedGear.length
+        ? await tx
+            .select()
+            .from(sightMarks)
+            .where(
+              and(
+                inArray(
+                  sightMarks.gearProfileId,
+                  ownedGear.map((g) => g.id),
+                ),
+                changedSince(sightMarks.updatedAt),
+              ),
+            )
+        : [];
+
       const sessionRows = await tx
         .select()
         .from(sessions)
@@ -216,7 +237,15 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
             )
         : [];
 
-      return { gear, targetRows, zoneRows, sessionRows, roundRows, arrowRows };
+      return {
+        gear,
+        targetRows,
+        zoneRows,
+        sightMarkRows,
+        sessionRows,
+        roundRows,
+        arrowRows,
+      };
     });
 
     return {
@@ -253,6 +282,16 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
           shape_params: JSON.stringify(z.shapeParams),
           created_at: iso(z.createdAt),
           updated_at: iso(z.updatedAt),
+        })),
+
+        sight_marks: bucket(result.sightMarkRows, since, (m) => ({
+          id: m.id,
+          gear_profile_id: m.gearProfileId,
+          distance_m: m.distanceM,
+          mark: m.mark,
+          notes: m.notes,
+          created_at: iso(m.createdAt),
+          updated_at: iso(m.updatedAt),
         })),
 
         sessions: bucket(result.sessionRows, since, (s) => ({
@@ -399,6 +438,26 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
             );
         }
 
+        if (get('sight_marks').deleted.length) {
+          const ownedGearForDelete = await ownedIds(
+            tx,
+            gearProfiles.id,
+            gearProfiles,
+            eq(gearProfiles.ownerId, userId),
+          );
+
+          if (ownedGearForDelete.size) {
+            await tx
+              .delete(sightMarks)
+              .where(
+                and(
+                  inArray(sightMarks.id, get('sight_marks').deleted),
+                  inArray(sightMarks.gearProfileId, [...ownedGearForDelete]),
+                ),
+              );
+          }
+        }
+
         if (get('targets').deleted.length) {
           await tx
             .delete(targets)
@@ -469,6 +528,34 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
           gearProfiles.id,
           gearProfiles,
           eq(gearProfiles.ownerId, userId),
+        );
+
+        await upsertMany(
+          tx,
+          sightMarks,
+          incoming('sight_marks')
+            // A mark on someone else's bow is not a reference this device gets
+            // to create, and a made-up gear id would fail the foreign key and
+            // roll back the whole push.
+            .filter((raw) => ownedGearIds.has(str(raw.gear_profile_id)))
+            .map((raw) => ({
+              id: uuid(raw.id),
+              gearProfileId: uuid(raw.gear_profile_id),
+              distanceM: bounded(raw.distance_m, 0.01, 500),
+              mark: bounded(raw.mark, -10000, 10000),
+              notes: boundedStr(raw.notes, 500),
+              createdAt: date(raw.created_at),
+              updatedAt: date(raw.updated_at),
+            })),
+          sightMarks.id,
+          {
+            gearProfileId: sql`excluded.gear_profile_id`,
+            distanceM: sql`excluded.distance_m`,
+            mark: sql`excluded.mark`,
+            notes: sql`excluded.notes`,
+            updatedAt: sql`excluded.updated_at`,
+          },
+          sql`excluded.updated_at > ${sightMarks.updatedAt}`,
         );
 
         const ownedTargetIds = await ownedIds(

@@ -14,6 +14,7 @@ import Arrow from './models/Arrow';
 import GearProfile from './models/GearProfile';
 import Round from './models/Round';
 import Session from './models/Session';
+import SightMarkRecord from './models/SightMarkRecord';
 import Target from './models/Target';
 import TargetZone from './models/TargetZone';
 
@@ -31,11 +32,20 @@ setGenerator(() => Crypto.randomUUID());
 // SQLite on device, LokiJS in the browser preview. Metro resolves which.
 export const database = new Database({
   adapter: createAdapter(),
-  modelClasses: [GearProfile, Target, TargetZone, Session, Round, Arrow],
+  modelClasses: [
+    GearProfile,
+    Target,
+    TargetZone,
+    Session,
+    Round,
+    Arrow,
+    SightMarkRecord,
+  ],
 });
 
 export const collections = {
   gearProfiles: database.get<GearProfile>('gear_profiles'),
+  sightMarks: database.get<SightMarkRecord>('sight_marks'),
   targets: database.get<Target>('targets'),
   targetZones: database.get<TargetZone>('target_zones'),
   sessions: database.get<Session>('sessions'),
@@ -43,4 +53,12 @@ export const collections = {
   arrows: database.get<Arrow>('arrows'),
 };
 
-export { Arrow, GearProfile, Round, Session, Target, TargetZone };
+export {
+  Arrow,
+  GearProfile,
+  Round,
+  Session,
+  SightMarkRecord,
+  Target,
+  TargetZone,
+};

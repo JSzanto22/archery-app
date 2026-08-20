@@ -52,6 +52,9 @@ export interface SyncOptions {
 /** Tables that participate in sync, in dependency order for the push. */
 const SYNCED_TABLES = [
   'gear_profiles',
+  // After gear_profiles: a sight mark points at a bow, so the bow has to
+  // exist server-side before the mark referencing it arrives.
+  'sight_marks',
   'targets',
   'target_zones',
   'sessions',

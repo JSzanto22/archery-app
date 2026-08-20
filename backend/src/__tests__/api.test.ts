@@ -20,6 +20,7 @@ import {
   gearProfiles,
   rounds,
   sessions,
+  sightMarks,
   targets,
   users,
 } from '../db/schema.js';
@@ -986,6 +987,126 @@ describe('hostile input', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.json().photoKey).toBe(photoKeyFor(TEST_USER, ids.round));
+  });
+});
+
+describe('sight marks', () => {
+  const markId = 'cccccccc-cccc-4ccc-8ccc-000000000001';
+
+  it("syncs a mark for the caller's own bow", async () => {
+    // Gear first: a mark points at a bow, so the bow has to exist before the
+    // mark referencing it arrives.
+    await app.inject({
+      method: 'POST',
+      url: '/gear',
+      payload: { id: ids.gear, name: 'Test recurve' },
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/sync/push',
+      payload: {
+        changes: {
+          sight_marks: {
+            created: [
+              {
+                id: markId,
+                gear_profile_id: ids.gear,
+                distance_m: 70,
+                mark: 10.6,
+                notes: null,
+                created_at: '2026-05-01T10:00:00.000Z',
+                updated_at: '2026-05-01T10:00:00.000Z',
+              },
+            ],
+            updated: [],
+            deleted: [],
+          },
+        },
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    const pulled = await app.inject({ method: 'GET', url: '/sync/pull' });
+    const marks = pulled.json().changes.sight_marks;
+    const all = [...marks.created, ...marks.updated];
+
+    expect(all).toHaveLength(1);
+    expect(all[0].distance_m).toBe(70);
+    expect(all[0].mark).toBe(10.6);
+  });
+
+  it("will not attach a mark to another archer's bow", async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/sync/push',
+      payload: {
+        changes: {
+          sight_marks: {
+            created: [
+              {
+                id: 'cccccccc-cccc-4ccc-8ccc-000000000002',
+                gear_profile_id: ids.otherGear,
+                distance_m: 50,
+                mark: 7.4,
+                notes: null,
+                created_at: '2026-05-01T10:00:00.000Z',
+                updated_at: '2026-05-01T10:00:00.000Z',
+              },
+            ],
+            updated: [],
+            deleted: [],
+          },
+        },
+      },
+    });
+
+    // Skipped rather than fatal — one bad reference must not fail the archer's
+    // whole sync — but the row is not written.
+    expect(res.statusCode).toBe(200);
+
+    const rows = await db
+      .select()
+      .from(sightMarks)
+      .where(eq(sightMarks.gearProfileId, ids.otherGear));
+    expect(rows).toHaveLength(0);
+  });
+
+  it('refuses a second mark at the same distance on one bow', async () => {
+    // Two marks for 50 m means the archer cannot tell which is current, which
+    // is exactly the problem the notebook already has.
+    const res = await app.inject({
+      method: 'POST',
+      url: '/sync/push',
+      payload: {
+        changes: {
+          sight_marks: {
+            created: [
+              {
+                id: 'cccccccc-cccc-4ccc-8ccc-000000000003',
+                gear_profile_id: ids.gear,
+                distance_m: 70,
+                mark: 99,
+                notes: null,
+                created_at: '2026-05-01T10:00:00.000Z',
+                updated_at: '2026-06-01T10:00:00.000Z',
+              },
+            ],
+            updated: [],
+            deleted: [],
+          },
+        },
+      },
+    });
+
+    expect(res.statusCode).toBe(500);
+
+    const rows = await db
+      .select()
+      .from(sightMarks)
+      .where(eq(sightMarks.id, markId));
+    expect(rows[0]!.mark).toBe(10.6);
   });
 });
 

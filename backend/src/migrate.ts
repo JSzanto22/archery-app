@@ -45,6 +45,7 @@ const FILES = [
   'migrations/0002_target_face_dimensions.sql',
   'migrations/0003_session_round_format.sql',
   'migrations/0004_arrow_set_size.sql',
+  'migrations/0005_sight_marks.sql',
 ] as const;
 
 /*
