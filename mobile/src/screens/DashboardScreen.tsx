@@ -201,17 +201,16 @@ export default function DashboardScreen({ navigation }: Props) {
               <Text style={[type.title, { color: palette.textPrimary }]}>
                 Your shooting
               </Text>
-              <View style={styles.titleActions}>
-                <Button
-                  label="Account"
-                  onPress={() => navigation.navigate('Account')}
-                />
-                <Button
-                  label="New session"
-                  variant="filled"
-                  onPress={() => navigation.navigate('NewSession')}
-                />
-              </View>
+              {/*
+                Account stays in the top corner deliberately. It is a rare
+                destination, and the hardest-to-reach corner is exactly where a
+                rare destination belongs — the primary action has moved to the
+                bottom bar instead.
+              */}
+              <Button
+                label="Account"
+                onPress={() => navigation.navigate('Account')}
+              />
             </View>
 
             <SegmentedControl
@@ -552,6 +551,35 @@ export default function DashboardScreen({ navigation }: Props) {
           />
         )}
       />
+
+      {/*
+        The primary action, anchored where a thumb already rests.
+        
+        It used to sit in the top-right corner, the least reachable part of the
+        screen for a one-handed grip — which is how this app is held, standing
+        on a shooting line with a bow in the other hand. Controls in the natural
+        thumb zone take substantially more interaction than ones at the top, and
+        this is the single thing an archer opens the app to do.
+        
+        Outside the FlatList rather than in its footer, so it stays put instead
+        of scrolling away behind a season of sessions.
+      */}
+      <View
+        style={[
+          styles.actionBar,
+          {
+            backgroundColor: palette.page,
+            borderTopColor: palette.gridline,
+          },
+        ]}
+      >
+        <Button
+          label="New session"
+          variant="filled"
+          block
+          onPress={() => navigation.navigate('NewSession')}
+        />
+      </View>
     </SafeAreaView>
   );
 }
@@ -598,6 +626,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
     paddingBottom: spacing.xl,
+  },
+  actionBar: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    // Clears the home indicator on a gesture-navigation phone, where the very
+    // bottom edge is the system's, not ours.
+    paddingBottom: spacing.lg,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   bestsRow: {
     flexDirection: 'row',
