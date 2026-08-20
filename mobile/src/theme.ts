@@ -152,17 +152,47 @@ export const fonts = {
  * The four-step type scale. Nothing renders text outside these steps plus a
  * weight tweak; if a fifth step feels needed, the hierarchy is wrong.
  */
-export const type: Record<'display' | 'title' | 'body' | 'label', TextStyle> = {
-  /** Hero numerals. Always pair with fontVariant tabular-nums for figures. */
+/*
+ * The type scale.
+ *
+ * Five steps, and the gaps between them are the point. Before this the
+ * dashboard rendered six different figures at the same 32px — the handicap,
+ * the group size, the number of tens, and the word "centred" all carried
+ * identical weight, so nothing read as more important than anything else and
+ * the screen had no focus. A scale that does not separate things is not a
+ * scale.
+ *
+ * `hero` exists for exactly one number per screen. If two things on a screen
+ * are hero, neither is.
+ */
+export const type: Record<
+  'hero' | 'display' | 'title' | 'body' | 'label',
+  TextStyle
+> = {
+  /** The single most important figure on a screen. Never more than one. */
+  hero: {
+    fontSize: 60,
+    fontFamily: fonts.display,
+    fontWeight: '700',
+    letterSpacing: -2,
+    lineHeight: 62,
+  },
+  /** Supporting figures. Deliberately less than half the hero's size. */
   display: {
-    fontSize: 32,
+    fontSize: 26,
     fontFamily: fonts.display,
     letterSpacing: -0.5,
-    lineHeight: 38,
+    lineHeight: 31,
   },
-  title: { fontSize: 22, fontFamily: fonts.heading, lineHeight: 28 },
+  title: { fontSize: 20, fontFamily: fonts.heading, lineHeight: 26 },
   body: { fontSize: 15, fontWeight: '400', lineHeight: 21 },
-  label: { fontSize: 12, fontWeight: '500', lineHeight: 16 },
+  /** Uppercase in use, which is why it carries tracking. */
+  label: {
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 16,
+    letterSpacing: 0.5,
+  },
 };
 
 /**

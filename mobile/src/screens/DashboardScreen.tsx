@@ -29,6 +29,7 @@ import {
   summariseHandicap,
 } from '../analytics/handicapProgress';
 import FirstRun from '../components/FirstRun';
+import HandicapHero from '../components/HandicapHero';
 import { useDashboardData } from '../hooks/useDashboardData';
 import { formatDate, formatPercent, formatTime, plural } from '../lib/format';
 import { useSync } from '../sync/useSync';
@@ -352,36 +353,19 @@ export default function DashboardScreen({ navigation }: Props) {
                   </View>
                 ) : null}
 
-                <View style={styles.tileRow}>
-                  <StatTile
-                    label="Handicap"
-                    value={
-                      handicap.current !== null ? String(handicap.current) : '—'
-                    }
-                    caption={
-                      handicap.current === null
-                        ? 'shoot a full round'
-                        : handicap.change === null
-                          ? (handicap.latest?.roundName ?? 'first round')
-                          : // Lower is better, so a negative change is progress and
-                            // has to read that way — "down from 47", never "-5".
-                            handicap.change < 0
-                            ? `down from ${handicap.current - handicap.change}`
-                            : handicap.change > 0
-                              ? `up from ${handicap.current - handicap.change}`
-                              : 'unchanged'
-                    }
-                  />
-                  <StatTile
-                    label="Best handicap"
-                    value={
-                      handicap.best !== null
-                        ? String(handicap.best.handicap)
-                        : '—'
-                    }
-                    caption={handicap.best?.roundName ?? 'no full round yet'}
-                  />
-                </View>
+                <HandicapHero
+                  handicap={handicap.current}
+                  change={handicap.change}
+                  roundName={handicap.latest?.roundName ?? null}
+                  best={
+                    handicap.best
+                      ? {
+                          handicap: handicap.best.handicap,
+                          roundName: handicap.best.roundName,
+                        }
+                      : null
+                  }
+                />
 
                 {/*
               Grouping stays, one row down and in real units. It is a genuine
