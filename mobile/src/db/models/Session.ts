@@ -20,6 +20,7 @@ export default class Session extends Model {
 
   @date('shot_at') shotAt: Date;
   @field('round_format_id') roundFormatId: string | null;
+  @field('arrow_set_size') arrowSetSize: number | null;
   @field('distance_m') distanceM: number | null;
   @field('gear_profile_id') gearProfileId: string | null;
   @field('equipment_tag') equipmentTag: string | null;

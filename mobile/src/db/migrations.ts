@@ -14,6 +14,24 @@ import {
 export default schemaMigrations({
   migrations: [
     {
+      // How many numbered arrows are in the set being shot, so a shaft that
+      // consistently lands wide can be identified rather than suspected.
+      //
+      // Only the set size is stored. Which shaft made a given mark is derived
+      // from its position in the session's shot order — a stored number would
+      // be a second copy of that, free to disagree after an arrow is deleted
+      // and re-marked.
+      toVersion: 4,
+      steps: [
+        addColumns({
+          table: 'sessions',
+          columns: [
+            { name: 'arrow_set_size', type: 'number', isOptional: true },
+          ],
+        }),
+      ],
+    },
+    {
       // Named rounds. Without one a score is an orphan number: not a
       // Portsmouth, not comparable to the last one, and with no handicap.
       toVersion: 3,

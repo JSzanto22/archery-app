@@ -25,6 +25,13 @@ export default function NewSessionScreen({ navigation }: Props) {
    * time is not a scored round, and forcing one would make the app lie.
    */
   const [roundFormatId, setRoundFormatId] = useState<string | null>(null);
+  /**
+   * Null means "do not number my arrows".
+   *
+   * Numbering is inferred from shot order, which is only right if the archer
+   * shoots their set in order — so it stays off until they say otherwise.
+   */
+  const [arrowSetSize, setArrowSetSize] = useState<number | null>(null);
   const [gearId, setGearId] = useState<string | null>(null);
   const [distance, setDistance] = useState<number | null>(null);
   const [customDistance, setCustomDistance] = useState('');
@@ -102,6 +109,7 @@ export default function NewSessionScreen({ navigation }: Props) {
         notes: notes.trim() || null,
         targetId,
         roundFormatId,
+        arrowSetSize,
       });
 
       // Replace rather than push: backing out of marking should land on the
@@ -146,6 +154,28 @@ export default function NewSessionScreen({ navigation }: Props) {
         {selectedRound
           ? `${describeRound(selectedRound)}. Shoot all of it and this scores a handicap.`
           : 'Freeform practice. Arrows are recorded, but a handicap needs a full round.'}
+      </Text>
+
+      <FieldLabel text="Numbered arrows" />
+      <View style={styles.chipRow}>
+        <Chip
+          label="Not numbered"
+          selected={arrowSetSize === null}
+          onPress={() => setArrowSetSize(null)}
+        />
+        {[3, 6, 8, 12].map((size) => (
+          <Chip
+            key={size}
+            label={`Set of ${size}`}
+            selected={arrowSetSize === size}
+            onPress={() => setArrowSetSize(size)}
+          />
+        ))}
+      </View>
+      <Text style={[styles.hint, { color: palette.textMuted }]}>
+        {arrowSetSize === null
+          ? 'Leave this off unless you shoot your arrows in number order.'
+          : `Arrows will be numbered 1 to ${arrowSetSize} in the order you shoot them, so a shaft that lands wide can be identified.`}
       </Text>
 
       <FieldLabel text="Target face" />

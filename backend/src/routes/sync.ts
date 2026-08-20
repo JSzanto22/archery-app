@@ -259,6 +259,7 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
           id: s.id,
           shot_at: iso(s.shotAt),
           round_format_id: s.roundFormatId,
+          arrow_set_size: s.arrowSetSize,
           distance_m: s.distanceM,
           gear_profile_id: s.gearProfileId,
           equipment_tag: s.equipmentTag,
@@ -538,6 +539,10 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
               shotAt: date(raw.shot_at),
               // A catalogue id, so bounded like any other client string.
               roundFormatId: boundedStr(raw.round_format_id, 64),
+              arrowSetSize:
+                raw.arrow_set_size === null || raw.arrow_set_size === undefined
+                  ? null
+                  : boundedInt(raw.arrow_set_size, 1, 24),
               distanceM:
                 raw.distance_m === null || raw.distance_m === undefined
                   ? null
@@ -559,6 +564,7 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
           {
             shotAt: sql`excluded.shot_at`,
             roundFormatId: sql`excluded.round_format_id`,
+            arrowSetSize: sql`excluded.arrow_set_size`,
             distanceM: sql`excluded.distance_m`,
             gearProfileId: sql`excluded.gear_profile_id`,
             equipmentTag: sql`excluded.equipment_tag`,

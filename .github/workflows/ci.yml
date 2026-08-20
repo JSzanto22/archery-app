@@ -143,7 +143,7 @@ jobs:
           for f in backend/db/migrations/0001_init.sql \
                    backend/db/seeds/0001_preset_targets.sql \
                    backend/db/migrations/0002_target_face_dimensions.sql \
-                   backend/db/migrations/0003_session_round_format.sql; do
+                   backend/db/migrations/0003_session_round_format.sql                    backend/db/migrations/0004_arrow_set_size.sql; do
             echo "applying $f"
             psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
           done

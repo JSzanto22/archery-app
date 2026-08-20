@@ -25,6 +25,8 @@ export interface NewSessionInput {
   targetId: string;
   /** A round format id from src/rounds/catalogue.ts, or null for practice. */
   roundFormatId: string | null;
+  /** Size of the archer's numbered arrow set, or null to number nothing. */
+  arrowSetSize: number | null;
 }
 
 /**
@@ -43,6 +45,7 @@ export async function createSession(
     const session = await collections.sessions.create((s: Session) => {
       s.shotAt = input.shotAt;
       s.roundFormatId = input.roundFormatId;
+      s.arrowSetSize = input.arrowSetSize;
       s.distanceM = input.distanceM;
       s.gearProfileId = input.gearProfileId;
       s.equipmentTag = input.equipmentTag;

@@ -53,6 +53,8 @@ const sessionInput = z.object({
   // opaque: the server has no list to validate against, and holding one would
   // mean redeploying the API to add a round.
   roundFormatId: z.string().trim().max(64).nullable().optional(),
+  // Matches the CHECK on the column: nobody shoots a set of a thousand.
+  arrowSetSize: z.number().int().min(1).max(24).nullable().optional(),
   // 9999.99 is what NUMERIC(6,2) holds; anything larger became a 500 from the
   // database rather than a 400 from validation.
   distanceM: z.number().positive().max(9999).nullable().optional(),

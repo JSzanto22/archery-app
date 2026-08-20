@@ -139,6 +139,13 @@ export const sessions = pgTable(
      * so a table of them would be a constant to keep in sync.
      */
     roundFormatId: text('round_format_id'),
+    /**
+     * How many numbered arrows are in the set being shot, or NULL.
+     *
+     * Which shaft made a given mark is derived on the device from shot order;
+     * only the set size needs storing. See 0004_arrow_set_size.sql.
+     */
+    arrowSetSize: integer('arrow_set_size'),
     /*
      * `mode: 'number'` on every NUMERIC column.
      *

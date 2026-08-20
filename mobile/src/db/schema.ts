@@ -22,7 +22,7 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb';
 
 export default appSchema({
   // Bump alongside a migration in ./migrations.ts — never on its own.
-  version: 3,
+  version: 4,
   tables: [
     tableSchema({
       name: 'gear_profiles',
@@ -81,6 +81,15 @@ export default appSchema({
          * user data, so storing them as rows would mean syncing a constant.
          */
         { name: 'round_format_id', type: 'string', isOptional: true },
+        /*
+         * How many numbered arrows are in the set being shot.
+         *
+         * Opt-in, and null by default. Set it and the app numbers each arrow by
+         * cycling shot order through the set; leave it and no arrow carries a
+         * number. Guessing would be worse than nothing: per-shaft analysis on
+         * misattributed arrows blames the wrong shaft.
+         */
+        { name: 'arrow_set_size', type: 'number', isOptional: true },
         { name: 'distance_m', type: 'number', isOptional: true },
         {
           name: 'gear_profile_id',

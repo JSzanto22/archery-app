@@ -2,6 +2,11 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
+import {
+  analyseArrowNumbers,
+  numberForShot,
+  type NumberedMark,
+} from '../analytics/arrowNumbers';
 import Scorecard, { type ScorecardEnd } from '../components/Scorecard';
 import TargetFace from '../components/TargetFace';
 import { Banner, Button, Screen, SectionHeader } from '../components/ui';
@@ -103,6 +108,37 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
 
     setRounds(views);
   }, [sessionId]);
+
+  /**
+   * Which shaft made each mark.
+   *
+   * Derived here rather than stored: the arrow number is a function of a
+   * mark's position in the session's shot order and the archer's set size, and
+   * a stored copy would be free to disagree after an arrow was deleted and
+   * re-marked. Rounds come back in end order and marks in shot order, so
+   * flattening them gives the sequence the archer actually shot.
+   */
+  const arrowReport = (() => {
+    const setSize = session?.arrowSetSize ?? null;
+    if (!setSize) return null;
+
+    const numbered: NumberedMark[] = [];
+    let shot = 0;
+
+    for (const view of rounds) {
+      for (const mark of view.marks) {
+        shot += 1;
+        numbered.push({
+          arrowNumber: numberForShot(shot, setSize),
+          x: mark.x,
+          y: mark.y,
+          scoreValue: mark.scoreValue,
+        });
+      }
+    }
+
+    return analyseArrowNumbers(numbered);
+  })();
 
   /**
    * The rounds as scorecard rows.
@@ -210,6 +246,50 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
         </View>
       ) : null}
 
+      {arrowReport && arrowReport.stats.length > 0 ? (
+        <View>
+          <SectionHeader title="By arrow" />
+          {arrowReport.hasEnoughData ? null : (
+            <Text
+              style={[type.label, styles.meta, { color: palette.textMuted }]}
+            >
+              {`Each shaft has been shot ${arrowReport.minShots} ${plural(arrowReport.minShots, 'time')} here. A few more sessions and this can say whether one of them is at fault.`}
+            </Text>
+          )}
+          {arrowReport.stats.map((stat) => (
+            <View key={stat.arrowNumber} style={styles.arrowRow}>
+              <Text
+                style={[
+                  type.body,
+                  styles.arrowNumber,
+                  { color: palette.textPrimary },
+                ]}
+              >
+                {stat.arrowNumber}
+              </Text>
+              <Text style={[type.body, { color: palette.textSecondary }]}>
+                {`${stat.meanScore.toFixed(1)} avg`}
+              </Text>
+              <Text
+                style={[
+                  type.label,
+                  styles.arrowNote,
+                  {
+                    color: stat.isOutlier
+                      ? palette.critical
+                      : palette.textMuted,
+                  },
+                ]}
+              >
+                {stat.isOutlier
+                  ? 'lands away from the rest — worth checking'
+                  : `${formatPercent(stat.offsetFromCentre)} from group centre`}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
       {rounds.map((view) => (
         <View key={view.round.id}>
           <SectionHeader
@@ -281,6 +361,18 @@ export default function SessionDetailScreen({ navigation, route }: Props) {
 
 const styles = StyleSheet.create({
   meta: { ...type.body, marginTop: spacing.xs },
+  arrowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    minHeight: 36,
+  },
+  arrowNumber: {
+    width: 26,
+    fontVariant: ['tabular-nums'],
+    fontWeight: '700',
+  },
+  arrowNote: { flex: 1 },
   notes: { ...type.body, fontStyle: 'italic', marginTop: spacing.sm },
   heroBlock: { marginTop: spacing.lg },
   heroValue: {

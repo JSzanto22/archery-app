@@ -78,6 +78,7 @@ async function newSession(targetId: string) {
     shotAt: new Date('2026-07-01T10:00:00Z'),
     distanceM: 70,
     roundFormatId: null,
+    arrowSetSize: null,
     gearProfileId: null,
     equipmentTag: null,
     location: 'Test range',
