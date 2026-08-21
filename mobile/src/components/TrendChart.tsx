@@ -20,7 +20,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import Svg, { Circle, Line, Path } from 'react-native-svg';
+import Svg, { Circle, Line, Path, Rect } from 'react-native-svg';
 
 import { Palette, radius, spacing, usePalette } from '../theme';
 
@@ -129,6 +129,47 @@ export default function TrendChart({
       .join(' ');
   }, [points, scale]);
 
+  /**
+   * The band of ordinary variation: one standard deviation either side of the
+   * mean.
+   *
+   * This is the chart's whole argument. Dr James Park's analysis of score
+   * variance — the same work that stopped grouping headlining this dashboard —
+   * says a large part of what an archer sees between sessions is noise. A bare
+   * line invites them to read a story into every bump. Drawing the band makes
+   * the noise visible, so a point inside it reads as "that is just variance"
+   * and a point outside it is worth thinking about.
+   */
+  const band = useMemo(() => {
+    if (!scale || points.length < 3) return null;
+
+    const values = points.map((p) => p.v);
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    const variance =
+      values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / (values.length - 1);
+    const sd = Math.sqrt(variance);
+
+    if (!Number.isFinite(sd) || sd === 0) return null;
+
+    // Clamped to the plot, so a band wider than the axis does not paint over
+    // the title.
+    const top = Math.max(PAD_TOP, scale.y(mean + sd));
+    const bottom = Math.min(height - PAD_BOTTOM, scale.y(mean - sd));
+
+    return { top, height: Math.max(0, bottom - top), mean: scale.y(mean) };
+  }, [height, points, scale]);
+
+  /** The line, closed down to the baseline so it can carry a fill. */
+  const areaPath = useMemo(() => {
+    if (!scale || points.length < 2 || path === '') return '';
+
+    const firstPoint = points[0]!;
+    const lastPoint = points[points.length - 1]!;
+    const floor = height - PAD_BOTTOM;
+
+    return `${path} L${scale.x(lastPoint.t)},${floor} L${scale.x(firstPoint.t)},${floor} Z`;
+  }, [height, path, points, scale]);
+
   const last = points[points.length - 1];
   const first = points[0];
 
@@ -190,6 +231,35 @@ export default function TrendChart({
               );
             })}
 
+            {/* Ordinary variation, drawn under everything else. */}
+            {band && band.height > 0 ? (
+              <>
+                <Rect
+                  x={PAD_LEFT}
+                  y={band.top}
+                  width={width - PAD_LEFT - PAD_RIGHT}
+                  height={band.height}
+                  fill={color}
+                  opacity={0.07}
+                />
+                <Line
+                  x1={PAD_LEFT}
+                  y1={band.mean}
+                  x2={width - PAD_RIGHT}
+                  y2={band.mean}
+                  stroke={color}
+                  strokeWidth={1}
+                  strokeDasharray="3 4"
+                  opacity={0.45}
+                />
+              </>
+            ) : null}
+
+            {/* Fill under the line: gives the series body without a second
+                colour, and makes the direction of travel readable at a
+                glance. */}
+            {areaPath ? <Path d={areaPath} fill={color} opacity={0.1} /> : null}
+
             <Path
               d={path}
               fill="none"
@@ -199,17 +269,38 @@ export default function TrendChart({
               strokeLinecap="round"
             />
 
-            {points.map((p, i) => (
-              <Circle
-                key={`${p.t}-${i}`}
-                cx={scale.x(p.t)}
-                cy={scale.y(p.v)}
-                r={i === selected ? 6 : 3}
-                fill={i === selected ? color : palette.surface}
-                stroke={color}
-                strokeWidth={2}
-              />
-            ))}
+            {/*
+              Only the latest point and the tapped one carry a dot. A circle on
+              every point is fourteen marks competing with the line they sit on,
+              and the tap targets are full-height columns regardless.
+            */}
+            {points.map((p, i) => {
+              const isLast = i === points.length - 1;
+              const isSelected = i === selected;
+              if (!isLast && !isSelected) return null;
+
+              return (
+                <React.Fragment key={`${p.t}-${i}`}>
+                  {isLast && selected === null ? (
+                    <Circle
+                      cx={scale.x(p.t)}
+                      cy={scale.y(p.v)}
+                      r={9}
+                      fill={color}
+                      opacity={0.18}
+                    />
+                  ) : null}
+                  <Circle
+                    cx={scale.x(p.t)}
+                    cy={scale.y(p.v)}
+                    r={isSelected ? 6 : 4.5}
+                    fill={isSelected ? palette.surface : color}
+                    stroke={color}
+                    strokeWidth={2}
+                  />
+                </React.Fragment>
+              );
+            })}
           </Svg>
 
           {/* Axis extremes and the direct label for the latest value. */}
@@ -217,6 +308,16 @@ export default function TrendChart({
             <Text style={styles.axisText}>{format(scale.min)}</Text>
             <Text style={styles.axisText}>{format(scale.max)}</Text>
           </View>
+
+          {/*
+            The band is meaningless without saying what it is. An unexplained
+            shaded area is decoration, and this one is carrying an argument.
+          */}
+          {band && band.height > 0 ? (
+            <Text style={styles.bandNote}>
+              Shaded band is your usual spread. Inside it is normal variation.
+            </Text>
+          ) : null}
 
           {shown ? (
             <View style={styles.footer}>
@@ -282,6 +383,12 @@ function makeStyles(palette: Palette) {
       top: spacing.md + 26,
       height: 120,
       justifyContent: 'space-between',
+    },
+    bandNote: {
+      color: palette.textMuted,
+      fontSize: 11,
+      lineHeight: 15,
+      marginTop: spacing.xs,
     },
     axisText: {
       color: palette.textMuted,

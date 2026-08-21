@@ -18,7 +18,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { fonts, radius, spacing, type, usePalette } from '../theme';
+import { radius, spacing, type, usePalette } from '../theme';
 
 interface Props {
   /** Null until a full round has been shot. */
@@ -74,20 +74,18 @@ export default function HandicapHero({
         >
           {handicap === null ? '—' : handicap}
         </Text>
-
-        {change !== null && change !== 0 ? (
-          <View style={styles.trend}>
-            <Text style={[styles.arrow, { color: trendColour }]}>
-              {improved ? '▼' : '▲'}
-            </Text>
-            <Text style={[type.body, { color: trendColour }]}>
-              {Math.abs(change)}
-            </Text>
-          </View>
-        ) : null}
       </View>
 
-      <Text style={[type.body, { color: palette.textSecondary }]}>
+      {/*
+        The sentence carries the trend on its own.
+        
+        There was an arrow-and-number chip beside the figure as well, saying
+        the same thing in a weaker form: it needed colour to mean anything,
+        and colour is the one signal that fails in bright sun and for a
+        colour-blind archer. Two ways of saying "down five" is one too many,
+        and the one that survives should be the one that cannot be misread.
+      */}
+      <Text style={[type.body, { color: trendColour }]}>
         {handicap === null
           ? 'Shoot a full round and this is the number your club uses.'
           : change === null
@@ -130,8 +128,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   figure: { fontVariant: ['tabular-nums'] },
-  trend: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingTop: 14 },
-  arrow: { fontSize: 12, fontFamily: fonts.heading },
   bestRow: {
     flexDirection: 'row',
     alignItems: 'center',
