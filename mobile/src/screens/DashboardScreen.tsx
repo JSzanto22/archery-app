@@ -34,7 +34,7 @@ import { useDashboardData } from '../hooks/useDashboardData';
 import { formatDate, formatPercent, formatTime, plural } from '../lib/format';
 import { useSync } from '../sync/useSync';
 import { RootStackParamList } from '../navigation';
-import { radius, spacing, type, usePalette } from '../theme';
+import { spacing, type, usePalette } from '../theme';
 import { formatDistance, useUnits } from '../units';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Dashboard'>;
@@ -299,15 +299,7 @@ export default function DashboardScreen({ navigation }: Props) {
                 {/* Every arrow in the range, on the face it was shot at. The
                 cloud's shape is the grouping; its offset is the sight error. */}
                 {groupMap && groupMap.points.length > 0 ? (
-                  <View
-                    style={[
-                      styles.mapCard,
-                      {
-                        backgroundColor: palette.surface,
-                        borderColor: palette.border,
-                      },
-                    ]}
-                  >
+                  <View style={[styles.mapCard]}>
                     <View style={styles.mapHeader}>
                       <Text
                         style={[type.label, { color: palette.textSecondary }]}
@@ -711,12 +703,18 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginBottom: spacing.md,
   },
-  tileRow: { flexDirection: 'row', gap: spacing.sm },
+  // A wider gap than the boxed version needed: with no borders, the space
+  // between columns is the only thing separating them.
+  tileRow: { flexDirection: 'row', gap: spacing.lg, marginBottom: spacing.sm },
+  /*
+   * The group map, unboxed like the charts.
+   *
+   * The target face already draws its own edge — a border round it is a
+   * second, weaker circle outside a real one.
+   */
   mapCard: {
-    borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: spacing.md,
-    marginBottom: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.lg,
   },
   mapHeader: {
     flexDirection: 'row',

@@ -22,7 +22,7 @@ import {
 } from 'react-native';
 import Svg, { Circle, Line, Path, Rect } from 'react-native-svg';
 
-import { Palette, radius, spacing, usePalette } from '../theme';
+import { Palette, spacing, usePalette } from '../theme';
 
 export interface TrendPoint {
   /** X position, typically a timestamp. */
@@ -354,13 +354,18 @@ export default function TrendChart({
 
 function makeStyles(palette: Palette) {
   return StyleSheet.create({
+    /*
+     * Deliberately not a card.
+     *
+     * A chart is already a bounded object — it has an axis, a title and a
+     * shape. Putting a border round it boxes something that was never in
+     * danger of leaking, and two boxed charts stacked under a boxed hero and a
+     * row of boxed tiles is a screen made entirely of containers. The title
+     * and the space above it separate this from what precedes it.
+     */
     card: {
-      backgroundColor: palette.surface,
-      borderRadius: radius.lg,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: palette.border,
-      padding: spacing.md,
-      marginBottom: spacing.md,
+      paddingVertical: spacing.sm,
+      marginBottom: spacing.lg,
     },
     header: {
       flexDirection: 'row',
