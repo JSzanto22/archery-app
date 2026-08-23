@@ -19,7 +19,6 @@ import { Q } from '@nozbe/watermelondb';
 
 import { scoreArrow } from '../scoring/scoring';
 import { collections, database } from './index';
-import { PRESET_TARGETS } from './presets';
 import Arrow from './models/Arrow';
 import Round from './models/Round';
 import Session from './models/Session';
@@ -42,6 +41,14 @@ function clamp01(v: number): number {
 
 interface Scenario {
   targetId: string;
+  /**
+   * The round these arrows make up.
+   *
+   * The end count below has to match it exactly or the shoot carries no
+   * handicap — which is the rule working, but makes demo data that cannot
+   * demonstrate the feature it exists to show.
+   */
+  roundFormatId: string | null;
   distanceM: number;
   location: string;
   ends: number;
@@ -56,9 +63,11 @@ interface Scenario {
 const SCENARIOS: Scenario[] = [
   {
     targetId: WA_122,
+    roundFormatId: 'wa720-70',
     distanceM: 70,
     location: 'County Field, main line',
-    ends: 6,
+    // 12 x 6 = 72 arrows, which is the WA 720 exactly.
+    ends: 12,
     arrowsPerEnd: 6,
     sigmaCm: 11,
     faceWidthCm: 122,
@@ -67,9 +76,11 @@ const SCENARIOS: Scenario[] = [
   },
   {
     targetId: WA_40_3SPOT,
+    roundFormatId: 'wa18',
     distanceM: 18,
     location: 'Riverside Indoor Range',
-    ends: 10,
+    // 20 x 3 = 60 arrows, which is a WA 18.
+    ends: 20,
     arrowsPerEnd: 3,
     sigmaCm: 2.8,
     faceWidthCm: 40,
@@ -87,19 +98,16 @@ export interface DevSeedResult {
   arrows: number;
 }
 
-/** True when demo sessions already exist, so the button can describe itself. */
-export async function hasAnySessions(): Promise<boolean> {
-  const count = await collections.sessions.query().fetchCount();
-  return count > 0;
-}
-
 export async function seedDemoData(sessionCount = 14): Promise<DevSeedResult> {
   const targets = await collections.targets
     .query(Q.where('id', Q.oneOf([WA_122, WA_40_3SPOT])))
     .fetch();
 
   const targetById = new Map(targets.map((t) => [t.id, t]));
-  const zonesById = new Map<string, Awaited<ReturnType<Target['toScoringZones']>>>();
+  const zonesById = new Map<
+    string,
+    Awaited<ReturnType<Target['toScoringZones']>>
+  >();
 
   for (const target of targets) {
     zonesById.set(target.id, await target.toScoringZones());
@@ -111,7 +119,9 @@ export async function seedDemoData(sessionCount = 14): Promise<DevSeedResult> {
 
   await database.write(async () => {
     for (let i = 0; i < sessionCount; i++) {
-      const scenario = SCENARIOS[i % SCENARIOS.length]!;
+      const scenario = SCENARIOS[i % SCENARIOS.length];
+      if (!scenario) continue;
+
       const target = targetById.get(scenario.targetId);
       const zones = zonesById.get(scenario.targetId);
       if (!target || !zones) continue;
@@ -132,6 +142,7 @@ export async function seedDemoData(sessionCount = 14): Promise<DevSeedResult> {
 
       const session = await collections.sessions.create((s: Session) => {
         s.shotAt = shotAt;
+        s.roundFormatId = scenario.roundFormatId;
         s.distanceM = scenario.distanceM;
         s.gearProfileId = null;
         s.equipmentTag = null;
@@ -154,8 +165,8 @@ export async function seedDemoData(sessionCount = 14): Promise<DevSeedResult> {
 
         for (let a = 1; a <= scenario.arrowsPerEnd; a++) {
           // On a multi-spot face one arrow goes in each spot.
-          const aim =
-            scenario.aimPoints[(a - 1) % scenario.aimPoints.length]!;
+          const aim = scenario.aimPoints[(a - 1) % scenario.aimPoints.length];
+          if (!aim) continue;
 
           const [z1, z2] = normalPair();
           const flyer = Math.random() < 0.06 ? 2.6 : 1;
@@ -197,5 +208,3 @@ export async function clearAllSessions(): Promise<void> {
     for (const session of sessions) await session.destroyPermanently();
   });
 }
-
-export const DEMO_PRESET_IDS = PRESET_TARGETS.map((p) => p.id);

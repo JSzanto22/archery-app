@@ -70,15 +70,15 @@ timestamp conflict resolution depends on and silently break sync. The
 Preset ids are fixed, not generated, so a target reference resolves to the same
 row in every environment:
 
-| Target | id suffix | Zones | Scores |
-| --- | --- | --- | --- |
-| WA 122 cm (10 ring) | `…101` | 10 circles | 10–1 |
-| WA 80 cm (10 ring) | `…102` | 10 circles | 10–1 |
-| WA 80 cm compound (6 ring) | `…103` | 6 circles | 10–5 |
-| WA 40 cm vertical 3-spot | `…104` | 15 ellipses | 10–6 |
+| Target                     | id suffix | Zones       | Scores |
+| -------------------------- | --------- | ----------- | ------ |
+| WA 122 cm (10 ring)        | `…101`    | 10 circles  | 10–1   |
+| WA 80 cm (10 ring)         | `…102`    | 10 circles  | 10–1   |
+| WA 80 cm compound (6 ring) | `…103`    | 6 circles   | 10–5   |
+| WA 40 cm vertical 3-spot   | `…104`    | 15 ellipses | 10–6   |
 
 Because geometry is normalized to the face, the 122 cm and 80 cm ten-ring faces
-are *geometrically identical* here — they differ only in physical size, which
+are _geometrically identical_ here — they differ only in physical size, which
 lives in the name and in `sessions.distance_m`.
 
 The inner-10 (X) ring is omitted: it scores the same 10 and exists only to break

@@ -10,6 +10,10 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { AuthProvider } from './src/auth/AuthProvider';
+import { config } from './src/config';
+import { collections } from './src/db';
+import { runSync } from './src/db/sync';
 import { ensurePresetTargets } from './src/db/bootstrap';
 import { clearAllSessions, seedDemoData } from './src/db/devSeed';
 import Navigation from './src/navigation';
@@ -29,7 +33,7 @@ export default function App() {
   });
 
   useEffect(() => {
-    (async () => {
+    void (async () => {
       try {
         // Bundled World Archery faces must exist before the first session can
         // be scored, and must not depend on having reached the network.
@@ -43,6 +47,14 @@ export default function App() {
           Object.assign(globalThis, {
             __seedDemo: seedDemoData,
             __clearSessions: clearAllSessions,
+            __collections: collections,
+            // Lets sync be exercised from the console against a local backend,
+            // without needing an account or a tap.
+            __sync: () =>
+              runSync({
+                apiBaseUrl: config.apiBaseUrl,
+                getAccessToken: async () => 'dev',
+              }),
           });
         }
 
@@ -74,15 +86,22 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={styles.fill}>
-      <SafeAreaProvider>
-        <StatusBar style="auto" />
-        <Navigation />
-      </SafeAreaProvider>
+      <AuthProvider>
+        <SafeAreaProvider>
+          <StatusBar style="auto" />
+          <Navigation />
+        </SafeAreaProvider>
+      </AuthProvider>
     </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  centre: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  centre: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
 });

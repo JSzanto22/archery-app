@@ -11,7 +11,14 @@
     // initialisation.
     "strictPropertyInitialization": false,
     "experimentalDecorators": true,
-    "noUncheckedIndexedAccess": false,
+    // Matches the backend. Every indexed read in this app is into an array
+    // whose length came from somewhere else — a zone list, a grid cell, a
+    // polygon vertex — which is exactly the shape this catches.
+    "noUncheckedIndexedAccess": true,
+    // A function that returns a value on some paths and falls off the end on
+    // others is almost always a missing case rather than an intent.
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
     "types": ["jest", "node"],
     "paths": {
       "@/*": ["./src/*"]

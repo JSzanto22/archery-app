@@ -20,9 +20,9 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import Svg, { Circle, Line, Path } from 'react-native-svg';
+import Svg, { Circle, Line, Path, Rect } from 'react-native-svg';
 
-import { Palette, radius, spacing, usePalette } from '../theme';
+import { Palette, spacing, usePalette } from '../theme';
 
 export interface TrendPoint {
   /** X position, typically a timestamp. */
@@ -39,6 +39,12 @@ interface Props {
   format: (v: number) => string;
   /** True when a smaller number is the better one, as with grouping. */
   lowerIsBetter?: boolean;
+  /**
+   * Range the measure can actually take. Axis headroom is clamped to it, so a
+   * chart never labels an impossible value — a group spread of -0.7 cm or an
+   * arrow averaging 10.12 on a ten-ring face both read as broken.
+   */
+  domain?: { min?: number; max?: number };
   height?: number;
 }
 
@@ -53,6 +59,7 @@ export default function TrendChart({
   color,
   format,
   lowerIsBetter = false,
+  domain,
   height = 160,
 }: Props) {
   const palette = usePalette();
@@ -88,6 +95,17 @@ export default function TrendChart({
       max += headroom;
     }
 
+    // Headroom must not invent values the measure cannot take. Without this a
+    // tight group charts a negative spread and a good session charts an
+    // average above the face's top ring.
+    if (domain?.min !== undefined) min = Math.max(min, domain.min);
+    if (domain?.max !== undefined) max = Math.min(max, domain.max);
+
+    // Clamping both ends of a near-flat series can collapse the band again.
+    if (max - min < Number.EPSILON) {
+      max = min + 1;
+    }
+
     const plotW = width - PAD_LEFT - PAD_RIGHT;
     const plotH = height - PAD_TOP - PAD_BOTTOM;
 
@@ -102,7 +120,7 @@ export default function TrendChart({
       min,
       max,
     };
-  }, [height, points, width]);
+  }, [domain?.max, domain?.min, height, points, width]);
 
   const path = useMemo(() => {
     if (!scale) return '';
@@ -110,6 +128,47 @@ export default function TrendChart({
       .map((p, i) => `${i === 0 ? 'M' : 'L'}${scale.x(p.t)},${scale.y(p.v)}`)
       .join(' ');
   }, [points, scale]);
+
+  /**
+   * The band of ordinary variation: one standard deviation either side of the
+   * mean.
+   *
+   * This is the chart's whole argument. Dr James Park's analysis of score
+   * variance — the same work that stopped grouping headlining this dashboard —
+   * says a large part of what an archer sees between sessions is noise. A bare
+   * line invites them to read a story into every bump. Drawing the band makes
+   * the noise visible, so a point inside it reads as "that is just variance"
+   * and a point outside it is worth thinking about.
+   */
+  const band = useMemo(() => {
+    if (!scale || points.length < 3) return null;
+
+    const values = points.map((p) => p.v);
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    const variance =
+      values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / (values.length - 1);
+    const sd = Math.sqrt(variance);
+
+    if (!Number.isFinite(sd) || sd === 0) return null;
+
+    // Clamped to the plot, so a band wider than the axis does not paint over
+    // the title.
+    const top = Math.max(PAD_TOP, scale.y(mean + sd));
+    const bottom = Math.min(height - PAD_BOTTOM, scale.y(mean - sd));
+
+    return { top, height: Math.max(0, bottom - top), mean: scale.y(mean) };
+  }, [height, points, scale]);
+
+  /** The line, closed down to the baseline so it can carry a fill. */
+  const areaPath = useMemo(() => {
+    if (!scale || points.length < 2 || path === '') return '';
+
+    const firstPoint = points[0]!;
+    const lastPoint = points[points.length - 1]!;
+    const floor = height - PAD_BOTTOM;
+
+    return `${path} L${scale.x(lastPoint.t)},${floor} L${scale.x(firstPoint.t)},${floor} Z`;
+  }, [height, path, points, scale]);
 
   const last = points[points.length - 1];
   const first = points[0];
@@ -119,7 +178,9 @@ export default function TrendChart({
     delta === null ? null : lowerIsBetter ? delta < 0 : delta > 0;
 
   const styles = makeStyles(palette);
-  const active = selected !== null ? points[selected] : null;
+  const active = selected !== null ? (points[selected] ?? null) : null;
+  /** The point the footer describes: whichever is tapped, else the newest. */
+  const shown = active ?? last ?? null;
 
   return (
     <View
@@ -170,6 +231,35 @@ export default function TrendChart({
               );
             })}
 
+            {/* Ordinary variation, drawn under everything else. */}
+            {band && band.height > 0 ? (
+              <>
+                <Rect
+                  x={PAD_LEFT}
+                  y={band.top}
+                  width={width - PAD_LEFT - PAD_RIGHT}
+                  height={band.height}
+                  fill={color}
+                  opacity={0.07}
+                />
+                <Line
+                  x1={PAD_LEFT}
+                  y1={band.mean}
+                  x2={width - PAD_RIGHT}
+                  y2={band.mean}
+                  stroke={color}
+                  strokeWidth={1}
+                  strokeDasharray="3 4"
+                  opacity={0.45}
+                />
+              </>
+            ) : null}
+
+            {/* Fill under the line: gives the series body without a second
+                colour, and makes the direction of travel readable at a
+                glance. */}
+            {areaPath ? <Path d={areaPath} fill={color} opacity={0.1} /> : null}
+
             <Path
               d={path}
               fill="none"
@@ -179,17 +269,38 @@ export default function TrendChart({
               strokeLinecap="round"
             />
 
-            {points.map((p, i) => (
-              <Circle
-                key={`${p.t}-${i}`}
-                cx={scale.x(p.t)}
-                cy={scale.y(p.v)}
-                r={i === selected ? 6 : 3}
-                fill={i === selected ? color : palette.surface}
-                stroke={color}
-                strokeWidth={2}
-              />
-            ))}
+            {/*
+              Only the latest point and the tapped one carry a dot. A circle on
+              every point is fourteen marks competing with the line they sit on,
+              and the tap targets are full-height columns regardless.
+            */}
+            {points.map((p, i) => {
+              const isLast = i === points.length - 1;
+              const isSelected = i === selected;
+              if (!isLast && !isSelected) return null;
+
+              return (
+                <React.Fragment key={`${p.t}-${i}`}>
+                  {isLast && selected === null ? (
+                    <Circle
+                      cx={scale.x(p.t)}
+                      cy={scale.y(p.v)}
+                      r={9}
+                      fill={color}
+                      opacity={0.18}
+                    />
+                  ) : null}
+                  <Circle
+                    cx={scale.x(p.t)}
+                    cy={scale.y(p.v)}
+                    r={isSelected ? 6 : 4.5}
+                    fill={isSelected ? palette.surface : color}
+                    stroke={color}
+                    strokeWidth={2}
+                  />
+                </React.Fragment>
+              );
+            })}
           </Svg>
 
           {/* Axis extremes and the direct label for the latest value. */}
@@ -198,25 +309,39 @@ export default function TrendChart({
             <Text style={styles.axisText}>{format(scale.max)}</Text>
           </View>
 
-          <View style={styles.footer}>
-            <Text style={styles.footerLabel}>
-              {active ? active.label : `Latest · ${last.label}`}
+          {/*
+            The band is meaningless without saying what it is. An unexplained
+            shaded area is decoration, and this one is carrying an argument.
+          */}
+          {band && band.height > 0 ? (
+            <Text style={styles.bandNote}>
+              Shaded band is your usual spread. Inside it is normal variation.
             </Text>
-            <Text style={[styles.footerValue, { color: palette.textPrimary }]}>
-              {format(active ? active.v : last.v)}
-            </Text>
-          </View>
+          ) : null}
+
+          {shown ? (
+            <View style={styles.footer}>
+              <Text style={styles.footerLabel}>
+                {active ? active.label : `Latest · ${shown.label}`}
+              </Text>
+              <Text
+                style={[styles.footerValue, { color: palette.textPrimary }]}
+              >
+                {format(shown.v)}
+              </Text>
+            </View>
+          ) : null}
 
           {/* Tap targets are full-height columns, far bigger than the 3px dots. */}
           <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
             <View style={styles.hitRow} pointerEvents="box-none">
-              {points.map((_, i) => (
+              {points.map((point, i) => (
                 <Pressable
-                  key={i}
+                  key={`${point.t}-${i}`}
                   style={styles.hitCell}
                   onPress={() => setSelected(selected === i ? null : i)}
                   accessibilityRole="button"
-                  accessibilityLabel={`${points[i].label}, ${format(points[i].v)}`}
+                  accessibilityLabel={`${point.label}, ${format(point.v)}`}
                 />
               ))}
             </View>
@@ -229,13 +354,18 @@ export default function TrendChart({
 
 function makeStyles(palette: Palette) {
   return StyleSheet.create({
+    /*
+     * Deliberately not a card.
+     *
+     * A chart is already a bounded object — it has an axis, a title and a
+     * shape. Putting a border round it boxes something that was never in
+     * danger of leaking, and two boxed charts stacked under a boxed hero and a
+     * row of boxed tiles is a screen made entirely of containers. The title
+     * and the space above it separate this from what precedes it.
+     */
     card: {
-      backgroundColor: palette.surface,
-      borderRadius: radius.lg,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: palette.border,
-      padding: spacing.md,
-      marginBottom: spacing.md,
+      paddingVertical: spacing.sm,
+      marginBottom: spacing.lg,
     },
     header: {
       flexDirection: 'row',
@@ -258,6 +388,12 @@ function makeStyles(palette: Palette) {
       top: spacing.md + 26,
       height: 120,
       justifyContent: 'space-between',
+    },
+    bandNote: {
+      color: palette.textMuted,
+      fontSize: 11,
+      lineHeight: 15,
+      marginTop: spacing.xs,
     },
     axisText: {
       color: palette.textMuted,

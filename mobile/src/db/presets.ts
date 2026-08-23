@@ -13,10 +13,31 @@
 import { ShapeParams, ShapeType } from '../scoring/geometry';
 
 export interface PresetZone {
+  /** Deterministic — see {@link presetZoneId}. */
+  id: string;
   zoneIndex: number;
   scoreValue: number;
   shapeType: ShapeType;
   shapeParams: ShapeParams;
+}
+
+/**
+ * The id a preset's zone must have, on this device and on the server alike.
+ *
+ * Both sides ship these presets: the app so a new install can score before it
+ * has ever reached the network, the server so every account sees the same
+ * standard faces. If the two mint different zone ids the first sync does not
+ * reconcile them — it adds a second complete set of rings to every preset
+ * face, which is exactly what happened before this existed.
+ *
+ * `backend/db/seeds/0001_preset_targets.sql` builds the identical string in
+ * SQL. Change one and you must change the other.
+ */
+export function presetZoneId(targetId: string, zoneIndex: number): string {
+  // The last eight characters of the target id, e.g. '00000101' for the
+  // 122 cm face, become the zone id's first group.
+  const suffix = targetId.slice(-8);
+  return `${suffix}-0000-4000-8000-${String(zoneIndex).padStart(12, '0')}`;
 }
 
 export interface PresetTarget {
@@ -33,8 +54,13 @@ export interface PresetTarget {
 }
 
 /** Concentric rings: ring n from the centre has outer radius n * 0.5 / count. */
-function concentricRings(count: number, topScore = 10): PresetZone[] {
+function concentricRings(
+  targetId: string,
+  count: number,
+  topScore = 10,
+): PresetZone[] {
   return Array.from({ length: count }, (_, idx) => ({
+    id: presetZoneId(targetId, idx),
     zoneIndex: idx,
     scoreValue: topScore - idx,
     shapeType: 'circle' as const,
@@ -49,12 +75,13 @@ function concentricRings(count: number, topScore = 10): PresetZone[] {
  * Zone ordering interleaves the spots — every 10 ring must be tested before any
  * 9 ring, or an arrow in one face's 10 could be caught by a neighbour's 9.
  */
-function verticalThreeSpot(): PresetZone[] {
+function verticalThreeSpot(targetId: string): PresetZone[] {
   const zones: PresetZone[] = [];
 
   for (let ring = 0; ring < 5; ring++) {
     for (let spot = 0; spot < 3; spot++) {
       zones.push({
+        id: presetZoneId(targetId, ring * 3 + spot),
         zoneIndex: ring * 3 + spot,
         scoreValue: 10 - ring,
         shapeType: 'ellipse',
@@ -74,36 +101,41 @@ function verticalThreeSpot(): PresetZone[] {
 
 const CENTRE = [{ x: 0.5, y: 0.5 }];
 
+const WA_122 = '00000000-0000-4000-8000-000000000101';
+const WA_80 = '00000000-0000-4000-8000-000000000102';
+const WA_80_COMPOUND = '00000000-0000-4000-8000-000000000103';
+const WA_40_3SPOT = '00000000-0000-4000-8000-000000000104';
+
 export const PRESET_TARGETS: PresetTarget[] = [
   {
-    id: '00000000-0000-4000-8000-000000000101',
+    id: WA_122,
     name: 'WA 122 cm (10 ring)',
     baseShape: 'circle',
     aspectRatio: 1,
     faceWidthCm: 122,
     aimPoints: CENTRE,
-    zones: concentricRings(10),
+    zones: concentricRings(WA_122, 10),
   },
   {
-    id: '00000000-0000-4000-8000-000000000102',
+    id: WA_80,
     name: 'WA 80 cm (10 ring)',
     baseShape: 'circle',
     aspectRatio: 1,
     faceWidthCm: 80,
     aimPoints: CENTRE,
-    zones: concentricRings(10),
+    zones: concentricRings(WA_80, 10),
   },
   {
-    id: '00000000-0000-4000-8000-000000000103',
+    id: WA_80_COMPOUND,
     name: 'WA 80 cm compound (6 ring)',
     baseShape: 'circle',
     aspectRatio: 1,
     faceWidthCm: 80,
     aimPoints: CENTRE,
-    zones: concentricRings(6),
+    zones: concentricRings(WA_80_COMPOUND, 6),
   },
   {
-    id: '00000000-0000-4000-8000-000000000104',
+    id: WA_40_3SPOT,
     name: 'WA 40 cm vertical 3-spot',
     baseShape: 'rectangle',
     aspectRatio: 40 / 120,
@@ -113,7 +145,7 @@ export const PRESET_TARGETS: PresetTarget[] = [
       { x: 0.5, y: 3 / 6 },
       { x: 0.5, y: 5 / 6 },
     ],
-    zones: verticalThreeSpot(),
+    zones: verticalThreeSpot(WA_40_3SPOT),
   },
 ];
 

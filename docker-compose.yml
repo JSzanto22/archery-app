@@ -17,29 +17,79 @@ services:
       # Secrets Manager; nothing here is ever a production password.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-archery_dev}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - '${POSTGRES_PORT:-5432}:5432'
     volumes:
       - archery_pgdata:/var/lib/postgresql/data
       # Postgres runs these once, in filename order, on an empty data directory.
       # It ignores subdirectories, so each file is mounted explicitly.
       - ./backend/db/migrations/0001_init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
       - ./backend/db/seeds/0001_preset_targets.sql:/docker-entrypoint-initdb.d/02_preset_targets.sql:ro
-      - ./backend/db/seeds/0002_demo_data.sql:/docker-entrypoint-initdb.d/03_demo_data.sql:ro
+      # Migrations run after the preset seed so their backfills have rows to
+      # update. Numbering keeps the order explicit rather than incidental.
+      - ./backend/db/migrations/0002_target_face_dimensions.sql:/docker-entrypoint-initdb.d/03_target_face_dimensions.sql:ro
+      - ./backend/db/migrations/0003_session_round_format.sql:/docker-entrypoint-initdb.d/04_session_round_format.sql:ro
+      - ./backend/db/migrations/0004_arrow_set_size.sql:/docker-entrypoint-initdb.d/05_arrow_set_size.sql:ro
+      - ./backend/db/migrations/0005_sight_marks.sql:/docker-entrypoint-initdb.d/06_sight_marks.sql:ro
+      - ./backend/db/seeds/0002_demo_data.sql:/docker-entrypoint-initdb.d/07_demo_data.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-archery} -d ${POSTGRES_DB:-archery}"]
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -U ${POSTGRES_USER:-archery} -d ${POSTGRES_DB:-archery}',
+        ]
       interval: 5s
       timeout: 5s
       retries: 12
       start_period: 20s
+
+  # S3-compatible object storage for round photos.
+  #
+  # Photo upload was unverifiable without an AWS account, which is how it came
+  # to be half-built: the endpoints existed and nothing called them. MinIO
+  # speaks the same API, so the whole path — presign, PUT, fetch — runs
+  # locally and in CI.
+  minio:
+    image: minio/minio:latest
+    container_name: archery-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-archery}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-archery_dev_secret}
+    ports:
+      - '${MINIO_PORT:-9000}:9000'
+      - '${MINIO_CONSOLE_PORT:-9001}:9001'
+    volumes:
+      - archery_minio:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # Creates the bucket once, then exits.
+  minio-init:
+    image: minio/mc:latest
+    container_name: archery-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+      mc alias set local http://minio:9000 ${S3_ACCESS_KEY:-archery} ${S3_SECRET_KEY:-archery_dev_secret} &&
+      mc mb --ignore-existing local/${S3_BUCKET:-archery-photos} &&
+      echo 'bucket ready'
+      "
+    restart: 'no'
 
   # Optional web SQL client: docker compose --profile tools up -d
   adminer:
     image: adminer:5
     container_name: archery-adminer
     restart: unless-stopped
-    profiles: ["tools"]
+    profiles: ['tools']
     ports:
-      - "${ADMINER_PORT:-8080}:8080"
+      - '${ADMINER_PORT:-8080}:8080'
     environment:
       ADMINER_DEFAULT_SERVER: db
     depends_on:
@@ -48,3 +98,4 @@ services:
 
 volumes:
   archery_pgdata:
+  archery_minio:

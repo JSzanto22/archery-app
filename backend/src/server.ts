@@ -25,9 +25,13 @@ try {
 }
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(signal, async () => {
-    await app.close();
-    await closeDatabase();
-    process.exit(0);
+  // `void` on the inner call: process.on wants a void-returning listener, and
+  // there is nobody left to hand a rejection to during shutdown anyway.
+  process.on(signal, () => {
+    void (async () => {
+      await app.close();
+      await closeDatabase();
+      process.exit(0);
+    })();
   });
 }

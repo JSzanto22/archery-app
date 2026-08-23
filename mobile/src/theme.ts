@@ -31,6 +31,13 @@ export interface Palette {
   accent: string;
   /** Darker gold for the pressed bottom edge of tactile buttons. */
   accentEdge: string;
+  /**
+   * Gold for borders and rings that carry meaning (selection, the loupe, the
+   * roundel). Raw `accent` is only 1.8:1 on the light surface — invisible in
+   * the bright sunlight this app is used in. This step clears the 3:1
+   * non-text minimum while still reading as gold.
+   */
+  accentBorder: string;
   /** Ink on a gold fill — warm near-black, never white (gold is light). */
   onAccent: string;
   /**
@@ -56,12 +63,15 @@ const light: Palette = {
   page: '#f7f4ec',
   textPrimary: '#191713',
   textSecondary: '#57534a',
-  textMuted: '#8c877b',
+  // 4.9:1 on the page, 5.3:1 on the surface. The previous #8c877b measured
+  // 3.3:1 and sat on every caption in the app.
+  textMuted: '#6f6a5e',
   gridline: '#e6e1d4',
   baseline: '#c9c3b3',
   border: 'rgba(25,23,19,0.12)',
   accent: '#f0b429',
   accentEdge: '#c68e17',
+  accentBorder: '#b2851e',
   onAccent: '#231a04',
   accentText: '#8a6100',
   accentTonal: '#f9ecca',
@@ -69,7 +79,9 @@ const light: Palette = {
   series1: '#2a78d6',
   series2: '#eb6834',
   good: '#006300',
-  critical: '#d03b3b',
+  // 4.5:1 against the page, which is the harsher of the two light backgrounds
+  // — #d03b3b cleared the surface but not the page.
+  critical: '#cc3a3a',
 };
 
 const dark: Palette = {
@@ -83,6 +95,8 @@ const dark: Palette = {
   border: 'rgba(247,244,236,0.12)',
   accent: '#f0b429',
   accentEdge: '#b07f12',
+  // Gold already clears 9:1 on the dark surface; no separate step needed.
+  accentBorder: '#f0b429',
   onAccent: '#231a04',
   accentText: '#f5c64f',
   accentTonal: '#332a12',
@@ -90,8 +104,12 @@ const dark: Palette = {
   series1: '#3987e5',
   series2: '#d95926',
   good: '#0ca30c',
-  critical: '#d03b3b',
+  // Lightened from #d03b3b, which measured 3.6:1 against the dark surface.
+  critical: '#d85a5a',
 };
+
+/** Both palettes, so contrast can be asserted in tests rather than reviewed. */
+export const PALETTES = { light, dark } as const;
 
 export function usePalette(): Palette {
   return useColorScheme() === 'dark' ? dark : light;
@@ -134,17 +152,47 @@ export const fonts = {
  * The four-step type scale. Nothing renders text outside these steps plus a
  * weight tweak; if a fifth step feels needed, the hierarchy is wrong.
  */
-export const type: Record<'display' | 'title' | 'body' | 'label', TextStyle> = {
-  /** Hero numerals. Always pair with fontVariant tabular-nums for figures. */
+/*
+ * The type scale.
+ *
+ * Five steps, and the gaps between them are the point. Before this the
+ * dashboard rendered six different figures at the same 32px — the handicap,
+ * the group size, the number of tens, and the word "centred" all carried
+ * identical weight, so nothing read as more important than anything else and
+ * the screen had no focus. A scale that does not separate things is not a
+ * scale.
+ *
+ * `hero` exists for exactly one number per screen. If two things on a screen
+ * are hero, neither is.
+ */
+export const type: Record<
+  'hero' | 'display' | 'title' | 'body' | 'label',
+  TextStyle
+> = {
+  /** The single most important figure on a screen. Never more than one. */
+  hero: {
+    fontSize: 60,
+    fontFamily: fonts.display,
+    fontWeight: '700',
+    letterSpacing: -2,
+    lineHeight: 62,
+  },
+  /** Supporting figures. Deliberately less than half the hero's size. */
   display: {
-    fontSize: 32,
+    fontSize: 26,
     fontFamily: fonts.display,
     letterSpacing: -0.5,
-    lineHeight: 38,
+    lineHeight: 31,
   },
-  title: { fontSize: 22, fontFamily: fonts.heading, lineHeight: 28 },
+  title: { fontSize: 20, fontFamily: fonts.heading, lineHeight: 26 },
   body: { fontSize: 15, fontWeight: '400', lineHeight: 21 },
-  label: { fontSize: 12, fontWeight: '500', lineHeight: 16 },
+  /** Uppercase in use, which is why it carries tracking. */
+  label: {
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 16,
+    letterSpacing: 0.5,
+  },
 };
 
 /**
@@ -177,6 +225,7 @@ export function zoneColors(
   }
 
   // Sequential blue, step 150 (low score) through 600 (high score).
+  // `as const` so the first element is known to exist and can be the fallback.
   const ramp = [
     '#b7d3f6',
     '#9ec5f4',
@@ -188,10 +237,13 @@ export function zoneColors(
     '#256abf',
     '#1c5cab',
     '#184f95',
-  ];
+  ] as const;
 
-  const t = maxScore <= 0 ? 0 : Math.min(1, Math.max(0, score / maxScore));
-  const fill = ramp[Math.round(t * (ramp.length - 1))];
+  // NaN would survive the clamp — Math.min/max propagate it — and index the
+  // ramp with NaN, yielding undefined and a zone drawn with no fill at all.
+  const ratio = maxScore <= 0 || !Number.isFinite(score) ? 0 : score / maxScore;
+  const t = Math.min(1, Math.max(0, ratio));
+  const fill = ramp[Math.round(t * (ramp.length - 1))] ?? ramp[0];
 
   return { fill, stroke: 'rgba(0,0,0,0.25)' };
 }

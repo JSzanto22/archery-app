@@ -49,14 +49,10 @@ import {
   PolygonParams,
   RectangleParams,
 } from '../scoring/geometry';
+import { heatMapGrid } from '../scoring/grouping';
 import { maxZoneScore, scoreArrow, Zone } from '../scoring/scoring';
 import { arrowMark, fonts, radius, usePalette, zoneColors } from '../theme';
-import {
-  DragState,
-  beginDrag,
-  finishDrag,
-  updateDrag,
-} from './markingGesture';
+import { DragState, beginDrag, finishDrag, updateDrag } from './markingGesture';
 
 export interface Mark {
   id: string;
@@ -78,6 +74,10 @@ interface Props {
    * Scatter mode: many small translucent dots instead of full marks. For
    * showing hundreds of arrows at once, where full-sized marks would merge
    * into a solid blob and hide the very shape being looked at.
+   *
+   * Above {@link HEAT_MAP_THRESHOLD} marks this switches to a binned density
+   * grid, because one SVG node per arrow stops being viable long before a
+   * serious archer's history does.
    */
   dense?: boolean;
   /** Draw a crosshair at the group's centre — where the sight is actually pointing. */
@@ -92,6 +92,21 @@ interface Props {
 
 /** Mark radius in viewBox units. */
 const MARK_RADIUS = 0.018;
+
+/**
+ * Above this many marks, scatter mode bins into a density grid.
+ *
+ * One `<Circle>` per arrow is fine for a session and fatal for a history: a
+ * hundred arrows a week reaches five thousand in a year, and the dashboard's
+ * "All" range would try to mount that many SVG nodes at once. The binned grid
+ * is a fixed cost regardless of how long the archer has been shooting, and it
+ * reads better too — overlapping translucent dots saturate, while a grid keeps
+ * showing where the density actually is.
+ */
+export const HEAT_MAP_THRESHOLD = 400;
+
+/** Cells per side in the binned view. */
+const HEAT_MAP_RESOLUTION = 28;
 
 /** Loupe: rendered size (px), and the slice of face it magnifies (0-1). */
 const LOUPE_SIZE = 104;
@@ -142,6 +157,40 @@ export default function TargetFace({
   const interactive = Boolean(onPlace || onMoveMark || onSelectMark);
 
   const maxScore = useMemo(() => maxZoneScore(zones), [zones]);
+
+  /**
+   * Non-empty cells of the density grid, or null when every mark can simply
+   * be drawn. Recomputed only when the marks change, not on every drag frame.
+   */
+  const heatCells = useMemo(() => {
+    if (!dense || marks.length <= HEAT_MAP_THRESHOLD) return null;
+
+    const grid = heatMapGrid(marks, HEAT_MAP_RESOLUTION);
+    const size = 1 / HEAT_MAP_RESOLUTION;
+    const cells: Array<{
+      key: string;
+      x: number;
+      y: number;
+      size: number;
+      intensity: number;
+    }> = [];
+
+    for (let i = 0; i < grid.length; i++) {
+      const intensity = grid[i];
+      if (!intensity || intensity <= 0) continue;
+      const row = Math.floor(i / HEAT_MAP_RESOLUTION);
+      const col = i % HEAT_MAP_RESOLUTION;
+      cells.push({
+        key: `${row}-${col}`,
+        x: col * size,
+        y: row * size,
+        size,
+        intensity,
+      });
+    }
+
+    return cells;
+  }, [dense, marks]);
 
   // Zones arrive innermost-first for scoring, so they must be drawn in reverse
   // or the 10 ring would be painted over by the 1 ring.
@@ -234,7 +283,9 @@ export default function TargetFace({
   const loupeLeft = drag
     ? Math.min(Math.max(drag.px - LOUPE_SIZE / 2, 4), size.w - LOUPE_SIZE - 4)
     : 0;
-  const loupeTop = drag ? drag.py - LOUPE_SIZE - LOUPE_LIFT + LOUPE_SIZE / 2 : 0;
+  const loupeTop = drag
+    ? drag.py - LOUPE_SIZE - LOUPE_LIFT + LOUPE_SIZE / 2
+    : 0;
   const loupeAbove = drag ? loupeTop >= 0 : true;
 
   const face = (
@@ -282,11 +333,31 @@ export default function TargetFace({
           ))}
         </G>
 
-        {marks.map((mark) => {
+        {/*
+          Binned density instead of thousands of nodes. Only the non-empty
+          cells are drawn, so a tight group costs a few dozen rectangles
+          however many arrows produced it.
+        */}
+        {heatCells
+          ? heatCells.map((cell) => (
+              <Rect
+                key={cell.key}
+                x={cell.x}
+                y={cell.y}
+                width={cell.size}
+                height={cell.size}
+                fill={arrowMark.fill}
+                opacity={0.15 + cell.intensity * 0.75}
+                stroke="none"
+              />
+            ))
+          : null}
+
+        {(heatCells ? [] : marks).map((mark) => {
           // The mark being moved renders at the drag position instead.
           const moving = drag?.mode === 'move' && drag.markId === mark.id;
-          const x = moving ? drag!.x : mark.x;
-          const y = moving ? drag!.y : mark.y;
+          const x = moving ? drag.x : mark.x;
+          const y = moving ? drag.y : mark.y;
 
           if (dense) {
             // Translucent so overlapping arrows accumulate into visible
@@ -399,7 +470,9 @@ export default function TargetFace({
             styles.loupeWrap,
             {
               left: loupeLeft,
-              top: loupeAbove ? loupeTop : drag.py + LOUPE_LIFT - LOUPE_SIZE / 2,
+              top: loupeAbove
+                ? loupeTop
+                : drag.py + LOUPE_LIFT - LOUPE_SIZE / 2,
             },
           ]}
         >
@@ -407,7 +480,7 @@ export default function TargetFace({
             style={[
               styles.loupe,
               {
-                borderColor: palette.accent,
+                borderColor: palette.accentBorder,
                 backgroundColor: palette.surface,
               },
             ]}

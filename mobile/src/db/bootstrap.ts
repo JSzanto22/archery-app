@@ -13,7 +13,6 @@ import { PRESET_TARGETS } from './presets';
 import Target from './models/Target';
 import TargetZone from './models/TargetZone';
 
-
 export async function ensurePresetTargets(): Promise<number> {
   const wanted = PRESET_TARGETS.map((p) => p.id);
 
@@ -61,6 +60,10 @@ export async function ensurePresetTargets(): Promise<number> {
 
       for (const zone of preset.zones) {
         await collections.targetZones.create((z: TargetZone) => {
+          // Deterministic, and identical to the server's. A generated id here
+          // would make the first sync add a second set of rings rather than
+          // reconcile with the ones already present.
+          z._raw.id = zone.id;
           z.targetId = target.id;
           z.zoneIndex = zone.zoneIndex;
           z.scoreValue = zone.scoreValue;

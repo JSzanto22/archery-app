@@ -22,7 +22,7 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb';
 
 export default appSchema({
   // Bump alongside a migration in ./migrations.ts — never on its own.
-  version: 2,
+  version: 5,
   tables: [
     tableSchema({
       name: 'gear_profiles',
@@ -73,8 +73,30 @@ export default appSchema({
       name: 'sessions',
       columns: [
         { name: 'shot_at', type: 'number', isIndexed: true },
+        /*
+         * Which named round this was, or null for freeform practice.
+         *
+         * The id of an entry in src/rounds/catalogue.ts rather than a foreign
+         * key: round formats are fixed definitions shipped with the app, not
+         * user data, so storing them as rows would mean syncing a constant.
+         */
+        { name: 'round_format_id', type: 'string', isOptional: true },
+        /*
+         * How many numbered arrows are in the set being shot.
+         *
+         * Opt-in, and null by default. Set it and the app numbers each arrow by
+         * cycling shot order through the set; leave it and no arrow carries a
+         * number. Guessing would be worse than nothing: per-shaft analysis on
+         * misattributed arrows blames the wrong shaft.
+         */
+        { name: 'arrow_set_size', type: 'number', isOptional: true },
         { name: 'distance_m', type: 'number', isOptional: true },
-        { name: 'gear_profile_id', type: 'string', isOptional: true, isIndexed: true },
+        {
+          name: 'gear_profile_id',
+          type: 'string',
+          isOptional: true,
+          isIndexed: true,
+        },
         { name: 'equipment_tag', type: 'string', isOptional: true },
         { name: 'location', type: 'string', isOptional: true },
         { name: 'notes', type: 'string', isOptional: true },
@@ -98,6 +120,20 @@ export default appSchema({
       ],
     }),
 
+    tableSchema({
+      name: 'sight_marks',
+      columns: [
+        // Marks belong to a bow, not to an archer: a different riser or a
+        // different draw weight is a different set of numbers entirely.
+        { name: 'gear_profile_id', type: 'string', isIndexed: true },
+        { name: 'distance_m', type: 'number' },
+        /** The archer's own reading — mm, clicks, or a tape number. */
+        { name: 'mark', type: 'number' },
+        { name: 'notes', type: 'string', isOptional: true },
+        { name: 'created_at', type: 'number' },
+        { name: 'updated_at', type: 'number' },
+      ],
+    }),
     tableSchema({
       name: 'arrows',
       columns: [

@@ -17,6 +17,21 @@
  *    is a known gap, written up in `backend/db/README.md`. The client side is
  *    ready for it: as soon as the server returns ids in `deleted`, they are
  *    applied with no change to this file.
+ *
+ * ## The preset diagnostic on first sync
+ *
+ * WatermelonDB logs "Server wants client to create record target_zones#…, but
+ * it already exists locally" the first time an install syncs. That is expected
+ * and harmless: both sides ship the World Archery faces — the app so a new
+ * install can score before it ever reaches the network, the server so every
+ * account sees the same standards — and they now agree on ids, so the applier
+ * updates the existing row exactly as intended.
+ *
+ * The alternative is worse in both directions. Not bundling the presets breaks
+ * offline-first for a fresh install; sending them as `updated` instead trades
+ * this diagnostic for the mirror-image one on any client that does not have
+ * them yet. The ids agreeing is the part that matters, and it is asserted on
+ * both sides (mobile/src/db/__tests__/presets.test.ts and the backend suite).
  */
 
 import {
@@ -25,6 +40,7 @@ import {
   SyncPullResult,
 } from '@nozbe/watermelondb/sync';
 
+import { fetchWithTimeout } from '../lib/http';
 import { database } from './index';
 
 export interface SyncOptions {
@@ -36,6 +52,9 @@ export interface SyncOptions {
 /** Tables that participate in sync, in dependency order for the push. */
 const SYNCED_TABLES = [
   'gear_profiles',
+  // After gear_profiles: a sight mark points at a bow, so the bow has to
+  // exist server-side before the mark referencing it arrives.
+  'sight_marks',
   'targets',
   'target_zones',
   'sessions',
@@ -108,7 +127,7 @@ export async function runSync(options: SyncOptions): Promise<void> {
   const authorizedFetch = async (path: string, init: RequestInit = {}) => {
     const token = await getAccessToken();
 
-    const response = await fetch(`${apiBaseUrl}${path}`, {
+    const response = await fetchWithTimeout(`${apiBaseUrl}${path}`, {
       ...init,
       headers: {
         'Content-Type': 'application/json',
@@ -159,15 +178,25 @@ export async function runSync(options: SyncOptions): Promise<void> {
           lastPulledAt: lastPulledAt
             ? new Date(lastPulledAt).toISOString()
             : null,
-          changes: mapChanges(changes as unknown as WireChanges, toWire),
+          changes: mapChanges(changes, toWire),
         }),
       });
     },
 
-    // Send the whole record rather than only changed fields. The server
-    // resolves conflicts last-write-wins on the entire row, so a partial
-    // payload would let an older field survive inside a newer row.
-    sendCreatedAsUpdated: true,
+    /*
+     * `sendCreatedAsUpdated` is deliberately NOT set.
+     *
+     * It is for backends that cannot tell a create from an update, and it made
+     * WatermelonDB log a diagnostic on every pull: the option promises the
+     * server never distinguishes the two, while `/sync/pull` genuinely does —
+     * it buckets by whether a row was created after the client's watermark.
+     * Enabling it also loses no information on push, since `/sync/push`
+     * upserts both buckets identically, so the honest setting is off.
+     *
+     * Watermelon already sends complete records in both buckets; the option
+     * has nothing to do with partial payloads, which is what it was mistaken
+     * for when it was first added here.
+     */
   });
 }
 

@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { requireAuth } from '../auth.js';
 import { db } from '../db/client.js';
 import { users } from '../db/schema.js';
+import { ensureProfile, placeholderEmail } from '../profile.js';
 
 const patchBody = z.object({
   displayName: z.string().trim().min(1).max(120).optional(),
@@ -21,7 +22,7 @@ export default async function meRoutes(app: FastifyInstance): Promise<void> {
    * the profile row only appeared via a webhook, a dropped delivery would leave
    * an account that can authenticate but has nowhere to store data.
    */
-  app.get('/me', async (request) => {
+  app.get('/me', async (request, reply) => {
     const existing = await db
       .select()
       .from(users)
@@ -30,27 +31,41 @@ export default async function meRoutes(app: FastifyInstance): Promise<void> {
 
     if (existing[0]) return existing[0];
 
-    const email = (request.headers['x-user-email'] as string | undefined) ?? null;
+    // Shared with /sync/push, which needs the same row to exist before it can
+    // write anything that references it. The email is the verified token's
+    // claim, never a header — see profile.ts.
+    await ensureProfile(db, request.userId, request.userEmail);
 
-    const created = await db
-      .insert(users)
-      .values({
-        id: request.userId,
-        // Cognito's email claim is the real source; this fallback keeps the
-        // NOT NULL satisfied when the claim is absent (dev bypass, or a pool
-        // configured without email scope).
-        email: email ?? `${request.userId}@placeholder.invalid`,
-      })
-      .onConflictDoNothing()
-      .returning();
+    /*
+     * Read back rather than trusting the insert's RETURNING.
+     *
+     * `onConflictDoNothing` returns nothing when the row already existed, and
+     * this used to end in `created[0] ?? existing[0]` — both undefined on that
+     * path, so the response was an empty 200 body that the app parsed as a
+     * profile with no fields. A concurrent first request from the archer's
+     * other device is enough to reach it.
+     */
+    const afterConflict = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, request.userId))
+      .limit(1);
 
-    return created[0] ?? existing[0];
+    if (afterConflict[0]) return afterConflict[0];
+
+    request.log.error(
+      { userId: request.userId, placeholder: placeholderEmail(request.userId) },
+      'user row could not be created: email already belongs to another account',
+    );
+    return reply.code(409).send({ error: 'Could not create profile' });
   });
 
   app.patch('/me', async (request, reply) => {
     const body = patchBody.safeParse(request.body);
     if (!body.success) {
-      return reply.code(400).send({ error: 'Invalid body', detail: body.error.issues });
+      return reply
+        .code(400)
+        .send({ error: 'Invalid body', detail: body.error.issues });
     }
 
     const updated = await db

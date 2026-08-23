@@ -11,8 +11,10 @@ import { Q } from '@nozbe/watermelondb';
 import { scoreArrow } from '../scoring/scoring';
 import { collections, database } from './index';
 import Arrow from './models/Arrow';
+import GearProfile from './models/GearProfile';
 import Round from './models/Round';
 import Session from './models/Session';
+import SightMarkRecord from './models/SightMarkRecord';
 import Target from './models/Target';
 
 export interface NewSessionInput {
@@ -23,6 +25,10 @@ export interface NewSessionInput {
   location: string | null;
   notes: string | null;
   targetId: string;
+  /** A round format id from src/rounds/catalogue.ts, or null for practice. */
+  roundFormatId: string | null;
+  /** Size of the archer's numbered arrow set, or null to number nothing. */
+  arrowSetSize: number | null;
 }
 
 /**
@@ -40,6 +46,8 @@ export async function createSession(
 
     const session = await collections.sessions.create((s: Session) => {
       s.shotAt = input.shotAt;
+      s.roundFormatId = input.roundFormatId;
+      s.arrowSetSize = input.arrowSetSize;
       s.distanceM = input.distanceM;
       s.gearProfileId = input.gearProfileId;
       s.equipmentTag = input.equipmentTag;
@@ -140,6 +148,50 @@ export async function deleteArrow(arrow: Arrow): Promise<void> {
   });
 }
 
+/** A removed mark, held long enough to put it back. */
+export interface RestorableArrow {
+  x: number;
+  y: number;
+  scoreValue: number;
+  shotOrder: number | null;
+}
+
+export function toRestorable(arrow: Arrow): RestorableArrow {
+  return {
+    x: arrow.x,
+    y: arrow.y,
+    scoreValue: arrow.scoreValue,
+    shotOrder: arrow.shotOrder,
+  };
+}
+
+/**
+ * Put back a mark that was just removed.
+ *
+ * Recreates rather than resurrects: the deleted row carries a tombstone the
+ * next sync must still deliver, so undoing it as a new record keeps both
+ * devices consistent. The original score and shot order are restored verbatim
+ * rather than recomputed — undo should return exactly what was there, not a
+ * fresh interpretation of it.
+ */
+export async function restoreArrow(
+  round: Round,
+  arrow: RestorableArrow,
+): Promise<Arrow> {
+  return database.write(async () => {
+    const now = new Date();
+    return collections.arrows.create((a: Arrow) => {
+      a.roundId = round.id;
+      a.x = arrow.x;
+      a.y = arrow.y;
+      a.scoreValue = arrow.scoreValue;
+      a.shotOrder = arrow.shotOrder;
+      a.createdAt = now;
+      a.updatedAt = now;
+    });
+  });
+}
+
 /** Move an existing mark, re-resolving its score at the new position. */
 export async function moveArrow(
   arrow: Arrow,
@@ -212,4 +264,84 @@ export async function deleteSession(session: Session): Promise<void> {
     }
     await session.markAsDeleted();
   });
+}
+
+/**
+ * Record or update the sight mark for a distance on a bow.
+ *
+ * One mark per distance per bow: re-recording a distance replaces it rather
+ * than adding a second row. Two marks for 50 m is exactly the problem a paper
+ * notebook already has — you cannot tell which is current.
+ */
+export async function setSightMark(
+  gearProfileId: string,
+  distanceM: number,
+  mark: number,
+): Promise<SightMarkRecord> {
+  const existing = await collections.sightMarks
+    .query(
+      Q.where('gear_profile_id', gearProfileId),
+      Q.where('distance_m', distanceM),
+    )
+    .fetch();
+
+  const now = new Date();
+  const current = existing[0];
+
+  return database.write(async () => {
+    if (current) {
+      return current.update((m: SightMarkRecord) => {
+        m.mark = mark;
+        m.updatedAt = now;
+      });
+    }
+
+    return collections.sightMarks.create((m: SightMarkRecord) => {
+      m.gearProfileId = gearProfileId;
+      m.distanceM = distanceM;
+      m.mark = mark;
+      m.notes = null;
+      m.createdAt = now;
+      m.updatedAt = now;
+    });
+  });
+}
+
+/** Every mark recorded for a bow, nearest distance first. */
+export async function sightMarksFor(
+  gearProfileId: string,
+): Promise<SightMarkRecord[]> {
+  const marks = await collections.sightMarks
+    .query(Q.where('gear_profile_id', gearProfileId))
+    .fetch();
+
+  return marks.sort((a, b) => a.distanceM - b.distanceM);
+}
+
+/**
+ * Add a bow.
+ *
+ * Nothing created these before, which meant the gear picker was permanently
+ * empty and sight marks — which hang off a bow — could not be recorded at all.
+ * The backend has had the endpoints since the beginning; the device simply
+ * never called them.
+ */
+export async function createGearProfile(
+  name: string,
+  bowType: string | null = null,
+): Promise<GearProfile> {
+  const trimmed = name.trim();
+  if (trimmed === '') throw new Error('A bow needs a name');
+
+  const now = new Date();
+
+  return database.write(async () =>
+    collections.gearProfiles.create((g: GearProfile) => {
+      g.name = trimmed;
+      g.bowType = bowType;
+      g.notes = null;
+      g.createdAt = now;
+      g.updatedAt = now;
+    }),
+  );
 }

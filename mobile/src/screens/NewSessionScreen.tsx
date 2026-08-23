@@ -3,8 +3,16 @@ import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { collections, GearProfile, Target } from '../db';
-import { createSession, setTargetFaceWidth } from '../db/actions';
+import {
+  createGearProfile,
+  createSession,
+  setSightMark,
+  setTargetFaceWidth,
+  sightMarksFor,
+} from '../db/actions';
+import { estimateMark, type SightMark } from '../scoring/sightMarks';
 import { Button, Chip, Screen } from '../components/ui';
+import { ROUNDS, describe as describeRound } from '../rounds/catalogue';
 import { RootStackParamList } from '../navigation';
 import { radius, spacing, type, usePalette } from '../theme';
 
@@ -19,6 +27,26 @@ export default function NewSessionScreen({ navigation }: Props) {
   const [gear, setGear] = useState<GearProfile[]>([]);
 
   const [targetId, setTargetId] = useState<string | null>(null);
+  /**
+   * Null means freeform practice, which is a first-class choice — most range
+   * time is not a scored round, and forcing one would make the app lie.
+   */
+  const [roundFormatId, setRoundFormatId] = useState<string | null>(null);
+  /**
+   * Null means "do not number my arrows".
+   *
+   * Numbering is inferred from shot order, which is only right if the archer
+   * shoots their set in order — so it stays off until they say otherwise.
+   */
+  const [arrowSetSize, setArrowSetSize] = useState<number | null>(null);
+
+  /** Marks recorded for the selected bow, for the estimate below. */
+  const [marks, setMarks] = useState<SightMark[]>([]);
+  const [markInput, setMarkInput] = useState('');
+
+  /** Inline bow creation, so an archer is never stuck with an empty picker. */
+  const [addingBow, setAddingBow] = useState(false);
+  const [bowName, setBowName] = useState('');
   const [gearId, setGearId] = useState<string | null>(null);
   const [distance, setDistance] = useState<number | null>(null);
   const [customDistance, setCustomDistance] = useState('');
@@ -40,24 +68,81 @@ export default function NewSessionScreen({ navigation }: Props) {
   }, [selectedTarget?.id, selectedTarget?.faceWidthCm]);
 
   useEffect(() => {
-    (async () => {
+    void (async () => {
       const [allTargets, allGear] = await Promise.all([
         collections.targets.query().fetch(),
         collections.gearProfiles.query().fetch(),
       ]);
       setTargets(allTargets);
       setGear(allGear);
-      if (allTargets.length > 0) setTargetId(allTargets[0].id);
+
+      const [firstTarget] = allTargets;
+      if (firstTarget) setTargetId(firstTarget.id);
     })();
   }, []);
 
   const resolvedDistance =
     customDistance.trim() !== '' ? Number.parseFloat(customDistance) : distance;
 
+  // Reload marks whenever the bow changes: they belong to the bow, not the
+  // archer, so switching riser switches the whole set of numbers.
+  useEffect(() => {
+    void (async () => {
+      if (!gearId) {
+        setMarks([]);
+        return;
+      }
+
+      const records = await sightMarksFor(gearId);
+      setMarks(records.map((r) => ({ distanceM: r.distanceM, mark: r.mark })));
+    })();
+  }, [gearId]);
+
+  const sightEstimate =
+    gearId && resolvedDistance !== null && Number.isFinite(resolvedDistance)
+      ? estimateMark(marks, resolvedDistance)
+      : null;
+
+  async function saveBow() {
+    if (bowName.trim() === '') return;
+
+    const created = await createGearProfile(bowName.trim());
+    const allGear = await collections.gearProfiles.query().fetch();
+
+    setGear(allGear);
+    // Select it straight away: an archer adding a bow here is about to shoot
+    // with it.
+    setGearId(created.id);
+    setBowName('');
+    setAddingBow(false);
+  }
+
+  async function saveMark() {
+    const value = Number.parseFloat(markInput);
+    if (
+      !gearId ||
+      resolvedDistance === null ||
+      !Number.isFinite(resolvedDistance) ||
+      !Number.isFinite(value)
+    ) {
+      return;
+    }
+
+    await setSightMark(gearId, resolvedDistance, value);
+    const records = await sightMarksFor(gearId);
+    setMarks(records.map((r) => ({ distanceM: r.distanceM, mark: r.mark })));
+    setMarkInput('');
+  }
+
   const canSave =
     targetId !== null &&
     !saving &&
     (resolvedDistance === null || Number.isFinite(resolvedDistance));
+
+  const selectedRound =
+    roundFormatId === null
+      ? null
+      : (ROUNDS.find((r) => r.id === roundFormatId) ?? null);
 
   const onStart = async () => {
     if (!targetId || saving) return;
@@ -88,6 +173,8 @@ export default function NewSessionScreen({ navigation }: Props) {
         location: location.trim() || null,
         notes: notes.trim() || null,
         targetId,
+        roundFormatId,
+        arrowSetSize,
       });
 
       // Replace rather than push: backing out of marking should land on the
@@ -112,6 +199,50 @@ export default function NewSessionScreen({ navigation }: Props) {
 
   return (
     <Screen>
+      <FieldLabel text="Round" />
+      <View style={styles.chipRow}>
+        <Chip
+          label="Practice"
+          selected={roundFormatId === null}
+          onPress={() => setRoundFormatId(null)}
+        />
+        {ROUNDS.map((round) => (
+          <Chip
+            key={round.id}
+            label={round.name}
+            selected={roundFormatId === round.id}
+            onPress={() => setRoundFormatId(round.id)}
+          />
+        ))}
+      </View>
+      <Text style={[styles.hint, { color: palette.textMuted }]}>
+        {selectedRound
+          ? `${describeRound(selectedRound)}. Shoot all of it and this scores a handicap.`
+          : 'Freeform practice. Arrows are recorded, but a handicap needs a full round.'}
+      </Text>
+
+      <FieldLabel text="Numbered arrows" />
+      <View style={styles.chipRow}>
+        <Chip
+          label="Not numbered"
+          selected={arrowSetSize === null}
+          onPress={() => setArrowSetSize(null)}
+        />
+        {[3, 6, 8, 12].map((size) => (
+          <Chip
+            key={size}
+            label={`Set of ${size}`}
+            selected={arrowSetSize === size}
+            onPress={() => setArrowSetSize(size)}
+          />
+        ))}
+      </View>
+      <Text style={[styles.hint, { color: palette.textMuted }]}>
+        {arrowSetSize === null
+          ? 'Leave this off unless you shoot your arrows in number order.'
+          : `Arrows will be numbered 1 to ${arrowSetSize} in the order you shoot them, so a shaft that lands wide can be identified.`}
+      </Text>
+
       <FieldLabel text="Target face" />
       <View style={styles.chipRow}>
         {targets.map((t) => (
@@ -181,7 +312,82 @@ export default function NewSessionScreen({ navigation }: Props) {
                 onPress={() => setGearId(g.id)}
               />
             ))}
+            <Chip
+              label="+ Add bow"
+              selected={false}
+              onPress={() => setAddingBow(true)}
+            />
           </View>
+
+          {addingBow ? (
+            <View style={styles.markRow}>
+              <TextInput
+                style={[inputStyle, styles.markInput]}
+                placeholder="e.g. Hoyt recurve"
+                placeholderTextColor={palette.textMuted}
+                value={bowName}
+                onChangeText={setBowName}
+                autoFocus
+                accessibilityLabel="Name of the bow"
+                returnKeyType="done"
+                onSubmitEditing={() => void saveBow()}
+              />
+              <Button
+                label="Save"
+                variant="tonal"
+                disabled={bowName.trim() === ''}
+                onPress={() => void saveBow()}
+              />
+            </View>
+          ) : null}
+
+          {/*
+            The sight mark for this distance, at the moment it is needed.
+            
+            This is the one screen where it matters: the archer is standing at
+            the line about to set their sight. Anywhere else it is a reference
+            table; here it is the answer to the question they are asking.
+          */}
+          {gearId &&
+          resolvedDistance !== null &&
+          Number.isFinite(resolvedDistance) ? (
+            <>
+              <FieldLabel text={`Sight mark at ${resolvedDistance} m`} />
+              {sightEstimate ? (
+                <Text style={[styles.hint, { color: palette.textSecondary }]}>
+                  {sightEstimate.confidence === 'recorded'
+                    ? `${sightEstimate.mark} — recorded.`
+                    : sightEstimate.confidence === 'interpolated'
+                      ? `About ${sightEstimate.mark.toFixed(2)} — worked out from your other marks, not measured.`
+                      : `About ${sightEstimate.mark.toFixed(2)} — beyond the distances you have recorded, so treat it as a starting point.`}
+                </Text>
+              ) : (
+                <Text style={[styles.hint, { color: palette.textMuted }]}>
+                  {marks.length < 2
+                    ? 'Record marks at two distances and this can work out the ones in between.'
+                    : 'Too far from the distances you have recorded to estimate.'}
+                </Text>
+              )}
+
+              <View style={styles.markRow}>
+                <TextInput
+                  style={[inputStyle, styles.markInput]}
+                  placeholder="Set it"
+                  placeholderTextColor={palette.textMuted}
+                  keyboardType="decimal-pad"
+                  value={markInput}
+                  onChangeText={setMarkInput}
+                  accessibilityLabel={`Sight mark for ${resolvedDistance} metres`}
+                />
+                <Button
+                  label="Save mark"
+                  variant="tonal"
+                  disabled={markInput.trim() === ''}
+                  onPress={() => void saveMark()}
+                />
+              </View>
+            </>
+          ) : null}
         </>
       ) : null}
 
@@ -210,7 +416,7 @@ export default function NewSessionScreen({ navigation }: Props) {
           variant="filled"
           block
           disabled={!canSave}
-          onPress={onStart}
+          onPress={() => void onStart()}
         />
       </View>
     </Screen>
@@ -232,6 +438,13 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
     marginBottom: spacing.sm,
   },
+  markRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  markInput: { flex: 1, marginBottom: 0 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   input: {
     minHeight: 48,

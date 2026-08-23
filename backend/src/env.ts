@@ -16,13 +16,61 @@ const schema = z
     DATABASE_URL: z.string().url(),
     PORT: z.coerce.number().int().positive().default(3000),
 
+    /**
+     * Authenticate to RDS Proxy with an IAM token instead of the password in
+     * DATABASE_URL. On by default nowhere: local Postgres and CI both use a
+     * password, and only the deployed function has a role to sign with.
+     */
+    DB_IAM_AUTH: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((v) => v === 'true'),
+
+    /**
+     * Path to the Amazon RDS CA bundle, required in production.
+     *
+     * RDS certificates are not signed by a CA in Node's default trust store,
+     * so verification needs the bundle supplied explicitly. Deployment puts it
+     * next to the handler; see infra/.
+     */
+    DB_CA_BUNDLE_PATH: z.string().optional(),
+
     DEV_USER_ID: z.string().uuid().optional(),
     COGNITO_USER_POOL_ID: z.string().optional(),
     COGNITO_CLIENT_ID: z.string().optional(),
 
+    /**
+     * Take identity from API Gateway's verified claims instead of verifying
+     * the token here.
+     *
+     * Only correct when the function is genuinely behind an HTTP API with a
+     * JWT authorizer, which is why it is off by default and set explicitly by
+     * the CDK API stack. Turning it on anywhere else would mean trusting an
+     * event field nobody had checked.
+     */
+    TRUST_GATEWAY_AUTHORIZER: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((v) => v === 'true'),
+
     S3_BUCKET: z.string().optional(),
     AWS_REGION: z.string().default('eu-west-2'),
     PRESIGNED_URL_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+
+    /**
+     * Points the S3 client at a local MinIO instead of AWS. Unset in every
+     * real environment, where the SDK resolves AWS's own endpoints and the
+     * function's IAM role supplies credentials.
+     */
+    S3_ENDPOINT: z.string().url().optional(),
+    S3_ACCESS_KEY: z.string().optional(),
+    S3_SECRET_KEY: z.string().optional(),
+
+    /**
+     * Comma-separated browser origins allowed to call the API in production.
+     * Unset means none, which is correct for a native-only client.
+     */
+    CORS_ALLOWED_ORIGINS: z.string().optional(),
   })
   .superRefine((env, ctx) => {
     const isProduction = env.NODE_ENV === 'production';
@@ -35,6 +83,38 @@ const schema = z
         code: z.ZodIssueCode.custom,
         message:
           'DEV_USER_ID must not be set when NODE_ENV=production — it disables authentication entirely.',
+      });
+    }
+
+    // A custom endpoint means "talk to something that is not AWS", which in
+    // production would silently divert every archer's photos.
+    if (isProduction && env.S3_ENDPOINT) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'S3_ENDPOINT must not be set when NODE_ENV=production — it redirects object storage away from AWS.',
+      });
+    }
+
+    // Checked here rather than only at connection time so a deploy missing the
+    // bundle fails on the first cold start, with a message that says what is
+    // wrong, instead of on a user's request with a TLS handshake error.
+    if (isProduction && !env.DB_CA_BUNDLE_PATH) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'DB_CA_BUNDLE_PATH is required when NODE_ENV=production — Amazon RDS certificates cannot be verified without it.',
+      });
+    }
+
+    // Both set is a contradiction: one says "every request is this user", the
+    // other says "identity comes from a verified token". Rather than pick a
+    // precedence and hope the reader guesses the same one, refuse.
+    if (env.TRUST_GATEWAY_AUTHORIZER && env.DEV_USER_ID) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'TRUST_GATEWAY_AUTHORIZER and DEV_USER_ID are mutually exclusive — the first takes identity from a verified token, the second ignores tokens entirely.',
       });
     }
 

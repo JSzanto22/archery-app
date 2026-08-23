@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { requireAuth } from '../auth.js';
 import { db } from '../db/client.js';
 import { gearProfiles } from '../db/schema.js';
+import { isUniqueViolation } from '../dbErrors.js';
 
 const createBody = z.object({
   id: z.string().uuid(),
@@ -28,26 +29,39 @@ export default async function gearRoutes(app: FastifyInstance): Promise<void> {
   app.post('/gear', async (request, reply) => {
     const body = createBody.safeParse(request.body);
     if (!body.success) {
-      return reply.code(400).send({ error: 'Invalid body', detail: body.error.issues });
+      return reply
+        .code(400)
+        .send({ error: 'Invalid body', detail: body.error.issues });
     }
 
-    // ownerId comes from the token. A client-supplied owner would let anyone
-    // write rows into someone else's account.
-    const created = await db
-      .insert(gearProfiles)
-      .values({ ...body.data, ownerId: request.userId })
-      .returning();
+    try {
+      // ownerId comes from the token. A client-supplied owner would let anyone
+      // write rows into someone else's account.
+      const created = await db
+        .insert(gearProfiles)
+        .values({ ...body.data, ownerId: request.userId })
+        .returning();
 
-    return reply.code(201).send(created[0]);
+      return reply.code(201).send(created[0]);
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return reply.code(409).send({ error: 'Already exists' });
+      }
+      throw error;
+    }
   });
 
   app.patch('/gear/:id', async (request, reply) => {
-    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const params = z
+      .object({ id: z.string().uuid() })
+      .safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid id' });
 
     const body = patchBody.safeParse(request.body);
     if (!body.success) {
-      return reply.code(400).send({ error: 'Invalid body', detail: body.error.issues });
+      return reply
+        .code(400)
+        .send({ error: 'Invalid body', detail: body.error.issues });
     }
 
     const updated = await db
@@ -68,7 +82,9 @@ export default async function gearRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.delete('/gear/:id', async (request, reply) => {
-    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const params = z
+      .object({ id: z.string().uuid() })
+      .safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'Invalid id' });
 
     const deleted = await db

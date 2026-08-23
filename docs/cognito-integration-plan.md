@@ -1,6 +1,6 @@
 # AWS Cognito Integration Plan
 
-*2026-08-01 — plan only; nothing has been implemented.*
+_2026-08-01 — plan only; nothing has been implemented._
 
 ## Where auth stands today
 
@@ -16,30 +16,30 @@ That is where nearly all the new work lands.
 
 ## 1. User pool (one per environment: dev / staging / prod)
 
-| Setting | Value | Why |
-| --- | --- | --- |
-| Sign-in | Email as username (case-insensitive alias) | The design's primary method |
-| Verification | Auto-send email code on sign-up | Standard; blocks typo'd addresses |
-| Required attributes | `email` only | Everything else lives in Postgres |
-| Custom attributes | **None** | `research_consent`, display name etc. are app data — queried relationally, so they belong in the `users` table (already there), not in Cognito where they'd be invisible to SQL |
-| MFA | Off for MVP | Casual-use app; revisit later |
-| Account recovery | Email | |
-| Deletion protection | On (prod only) | |
+| Setting             | Value                                      | Why                                                                                                                                                                             |
+| ------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sign-in             | Email as username (case-insensitive alias) | The design's primary method                                                                                                                                                     |
+| Verification        | Auto-send email code on sign-up            | Standard; blocks typo'd addresses                                                                                                                                               |
+| Required attributes | `email` only                               | Everything else lives in Postgres                                                                                                                                               |
+| Custom attributes   | **None**                                   | `research_consent`, display name etc. are app data — queried relationally, so they belong in the `users` table (already there), not in Cognito where they'd be invisible to SQL |
+| MFA                 | Off for MVP                                | Casual-use app; revisit later                                                                                                                                                   |
+| Account recovery    | Email                                      |                                                                                                                                                                                 |
+| Deletion protection | On (prod only)                             |                                                                                                                                                                                 |
 
 `users.id` mirrors the Cognito `sub`, as the schema already documents.
 
 ## 2. App client
 
-| Setting | Value | Why |
-| --- | --- | --- |
-| Client type | Public, **no secret** | A mobile binary cannot keep a secret |
-| Auth flow | `USER_SRP_AUTH` only | Password never transits in plaintext; do not enable `USER_PASSWORD_AUTH` or admin flows |
-| Token validity | Access 1 h · ID 1 h · Refresh 30 d | Casual users shouldn't re-login weekly; 30-day sliding refresh means sign-in roughly once a month at worst |
-| OAuth / hosted UI | Deferred (see federation below) | |
+| Setting           | Value                              | Why                                                                                                        |
+| ----------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Client type       | Public, **no secret**              | A mobile binary cannot keep a secret                                                                       |
+| Auth flow         | `USER_SRP_AUTH` only               | Password never transits in plaintext; do not enable `USER_PASSWORD_AUTH` or admin flows                    |
+| Token validity    | Access 1 h · ID 1 h · Refresh 30 d | Casual users shouldn't re-login weekly; 30-day sliding refresh means sign-in roughly once a month at worst |
+| OAuth / hosted UI | Deferred (see federation below)    |                                                                                                            |
 
 **Google/Apple federation — recommended for a later phase.** Both need external
 developer accounts (Apple's is paid), and Apple's App Store rule means that the
-moment you offer Google sign-in you are *required* to offer Sign in with Apple.
+moment you offer Google sign-in you are _required_ to offer Sign in with Apple.
 Email/password first ships auth without either dependency; federation slots in
 later via the hosted UI without changing the backend at all (tokens come from
 the same pool).
@@ -56,20 +56,46 @@ the same pool).
   `Authorization: Bearer …`. The backend verifier is already configured with
   `tokenUse: 'access'`, and API Gateway's JWT authorizer (Task 1) accepts
   access tokens via the `client_id` claim.
-- **Email bootstrap wrinkle:** access tokens carry no `email` claim; the ID
-  token does. `GET /me` already accepts an `x-user-email` header for the first
-  call — the app will send its ID-token email there once. This header is
-  client-asserted, which is acceptable for profile data (it is unique-checked,
-  not trusted for authorization). If we ever want it verified, the backend can
-  optionally verify the ID token for that one endpoint — noted, not planned.
+- **Email bootstrap — superseded.** This plan originally had `GET /me` read the
+  address from a client-asserted `x-user-email` header, on the reasoning that
+  profile data need not be verified. That reasoning was wrong, and the header
+  was removed during the security pass on 2026-08-14.
+
+  `users.email` is `NOT NULL UNIQUE`, so a client-asserted value is not merely
+  unverified — it is a claim on a scarce resource. Anyone could have sent a
+  stranger's address on their own first `/me` call, taken that row, and left
+  the real owner's first `/me` failing the unique constraint forever. An
+  unauthenticated denial of service against a named individual, through a field
+  we described as harmless.
+
+  What replaced it: the email is read from the verified token when the pool
+  supplies one, and otherwise a `{sub}@placeholder.invalid` is stored. Cognito
+  access tokens normally carry no email claim, so in practice the placeholder
+  is what lands.
+
+  **That is fine, because nothing reads the column.** It is written on first
+  call and never selected — not by the API, not by the app. Cognito owns
+  identity and the real address. If a genuine need appears (contacting research
+  participants, say), the honest ways to satisfy it are `AdminGetUser` at the
+  point of use, or a pre-token-generation trigger that puts a verified `email`
+  claim in the access token. Both keep the property that our copy only ever
+  holds something AWS vouched for.
+
 - **Refresh:** `fetchAuthSession()` transparently refreshes; the existing
   `SyncOptions.getAccessToken` callback maps onto it one-to-one. No changes to
   `sync.ts`.
 
 ## 4. Wiring into the existing flow
 
-**Backend: effectively nothing.** Set `COGNITO_USER_POOL_ID` +
-`COGNITO_CLIENT_ID`, leave `DEV_USER_ID` unset outside local dev. Done.
+**Backend: done, and smaller than this said.** The CDK API stack sets
+`COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID` and `TRUST_GATEWAY_AUTHORIZER`, and
+`env.ts` refuses to start in production with `DEV_USER_ID` set.
+
+The one change beyond configuration was option B from the deployment
+assessment: behind API Gateway the JWT authorizer has already verified the
+token, so `auth.ts` reads the subject from the event's claims rather than
+fetching Cognito's JWKS — which the Lambda, sitting in a VPC with no internet
+route, cannot do. In-app verification remains the path everywhere else.
 
 **Mobile: all new, in small pieces.**
 
@@ -94,7 +120,7 @@ touches the network, and sync simply pauses if a refresh fails and resumes
 next time it succeeds. The alternative (anonymous local-only mode with
 account-linking later) is real work: merging a local UUID universe into an
 authenticated one deserves its own design, and the schema's client-generated
-UUIDs make it *possible* later without blocking anything now.
+UUIDs make it _possible_ later without blocking anything now.
 
 ## 5. One wrinkle worth knowing in advance
 

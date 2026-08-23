@@ -60,17 +60,17 @@ the Fastify instance and the connection pool.
 
 ## Endpoints
 
-| Area | Endpoints |
-| --- | --- |
-| Ops | `GET /health` (unauthenticated) |
-| Profile | `GET /me`, `PATCH /me` |
-| Gear | `GET/POST /gear`, `PATCH/DELETE /gear/:id` |
-| Targets | `GET /targets`, `GET/POST /targets/:id`, `PATCH/DELETE /targets/:id` |
-| Sessions | `GET /sessions`, `GET/POST/PATCH/DELETE /sessions/:id` |
-| Rounds | `POST /sessions/:id/rounds`, `PATCH/DELETE /rounds/:id` |
-| Arrows | `PUT /rounds/:id/arrows` (full replace) |
-| Photos | `POST/GET /rounds/:id/photo-url` (pre-signed S3) |
-| Sync | `GET /sync/pull?since=`, `POST /sync/push` |
+| Area     | Endpoints                                                            |
+| -------- | -------------------------------------------------------------------- |
+| Ops      | `GET /health` (unauthenticated)                                      |
+| Profile  | `GET /me`, `PATCH /me`                                               |
+| Gear     | `GET/POST /gear`, `PATCH/DELETE /gear/:id`                           |
+| Targets  | `GET /targets`, `GET/POST /targets/:id`, `PATCH/DELETE /targets/:id` |
+| Sessions | `GET /sessions`, `GET/POST/PATCH/DELETE /sessions/:id`               |
+| Rounds   | `POST /sessions/:id/rounds`, `PATCH/DELETE /rounds/:id`              |
+| Arrows   | `PUT /rounds/:id/arrows` (full replace)                              |
+| Photos   | `POST/GET /rounds/:id/photo-url` (pre-signed S3)                     |
+| Sync     | `GET /sync/pull?since=`, `POST /sync/push`                           |
 
 ## Rules that are load-bearing
 
@@ -101,7 +101,7 @@ other.
 
 ## Sync
 
-`GET /sync/pull` returns WatermelonDB's change format using the *client's*
+`GET /sync/pull` returns WatermelonDB's change format using the _client's_
 column names, because the device applies the rows straight into its local
 schema. `owner_id` and `sync_status` are stripped (the device has neither
 column) and `shape_params` is stringified (SQLite has no JSON type). The whole
