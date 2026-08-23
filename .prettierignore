@@ -9,3 +9,10 @@ package-lock.json
 # Formatting SQL would fight the alignment the migrations use to make column
 # definitions readable as a table.
 *.sql
+
+# GitHub workflows embed shell scripts in YAML block scalars, and Prettier
+# rewrites them — it stripped the backslash line continuations out of the
+# migration loop, joining three lines into one. That happened to stay valid
+# bash, but a continuation inside a quoted string would not have, and CI would
+# have broken with no clue why.
+.github/workflows
